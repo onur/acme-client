@@ -1,0 +1,3 @@
+[submodule "rust-openssl"]
+	path = rust-openssl
+	url = https://github.com/sfackler/rust-openssl.git
