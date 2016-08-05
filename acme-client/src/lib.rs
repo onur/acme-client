@@ -53,6 +53,15 @@
 //!     .and_then(|ac| ac.save_domain_private_key("domain.key"))
 //!     .and_then(|ac| ac.save_csr("domain.csr"));
 //! ```
+//!
+//! Revoking signed certificate:
+//! 
+//! ```rust,no_run
+//! AcmeClient::new()
+//!     .and_then(|ac| ac.load_user_key("tests/user.key"))
+//!     .and_then(|ac| ac.load_certificate("domain.crt"))
+//!     .and_then(|ac| ac.revoke_signed_certificate());
+//! ```
 
 
 #[macro_use]
@@ -68,12 +77,12 @@ extern crate rustc_serialize;
 use std::fs::File;
 use std::path::Path;
 use std::io;
-use std::io::{Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::collections::BTreeMap;
 
 use openssl::crypto::pkey::PKey;
 use openssl::crypto::hash::{hash, Type};
-use openssl::x509::{X509Req, X509Generator};
+use openssl::x509::{X509, X509Req, X509Generator};
 use openssl::x509::extension::{Extension, KeyUsageOption};
 
 use hyper::Client;
@@ -103,7 +112,7 @@ mod hyperx {
 
 
 /// Automatic Certificate Management Environment (ACME) client
-pub struct AcmeClient {
+pub struct AcmeClient<'ctx> {
     ca_server: String,
     agreement: String,
     bit_length: u32,
@@ -113,12 +122,12 @@ pub struct AcmeClient {
     domain_csr: Option<X509Req>,
     challenges: Option<Json>,
     http_challenge: Option<(String, String, String)>,
-    signed_cert: Option<Vec<u8>>,
+    signed_cert: Option<X509<'ctx>>,
     chain_url: Option<String>,
 }
 
 
-impl Default for AcmeClient {
+impl<'ctx> Default for AcmeClient<'ctx> {
     fn default() -> Self {
         AcmeClient {
             ca_server: LETSENCRYPT_CA_SERVER.to_owned(),
@@ -137,7 +146,7 @@ impl Default for AcmeClient {
 }
 
 
-impl AcmeClient {
+impl<'ctx> AcmeClient<'ctx> {
     pub fn new() -> Result<Self> {
         Ok(AcmeClient::default())
     }
@@ -173,6 +182,7 @@ impl AcmeClient {
 
     /// Generates new user key.
     pub fn gen_user_key(mut self) -> Result<Self> {
+        debug!("Generating user key");
         if self.user_key.is_none() {
             self.user_key = Some(gen_key());
         }
@@ -182,6 +192,7 @@ impl AcmeClient {
 
     /// Generates new domain key.
     pub fn gen_domain_key(mut self) -> Result<Self> {
+        debug!("Generating domain key");
         if self.domain_key.is_none() {
             self.domain_key = Some(gen_key());
         }
@@ -296,6 +307,7 @@ impl AcmeClient {
         Ok(self)
     }
 
+
     /// Saves CSR file as PEM.
     pub fn save_csr<P: AsRef<Path>>(self, path: P) -> Result<Self> {
         {
@@ -310,6 +322,17 @@ impl AcmeClient {
     }
 
 
+
+    /// Loads a signed X509 certificate as pem
+    ///
+    /// This is required if you want to revoke a signed certificate
+    pub fn load_certificate<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
+        let mut file = try!(File::open(path));
+        self.signed_cert = Some(try!(X509::from_pem(&mut file)));
+        Ok(self)
+    }
+
+
     /// Registers new user account.
     ///
     /// You can optionally use an email for this account.
@@ -320,6 +343,8 @@ impl AcmeClient {
         if let None = self.user_key {
             self = try!(self.gen_user_key());
         }
+
+        info!("Registering account");
 
         let mut map = BTreeMap::new();
         map.insert("agreement".to_owned(), self.agreement.to_json());
@@ -339,6 +364,8 @@ impl AcmeClient {
 
     /// Makes new identifier authorization request and gets challenges for domain.
     pub fn identify_domain(mut self) -> Result<Self> {
+        info!("Sending identifier authorization request");
+
         let mut map = BTreeMap::new();
         map.insert("identifier".to_owned(), {
             let mut map = BTreeMap::new();
@@ -414,6 +441,7 @@ impl AcmeClient {
 
         use std::fs::create_dir_all;
         let path = path.as_ref().join(".well-known").join("acme-challenge");
+        debug!("Saving validation token into: {:?}", path);
         try!(create_dir_all(&path));
 
         let mut file = try!(File::create(path.join(&token)));
@@ -425,6 +453,7 @@ impl AcmeClient {
 
     /// Triggers HTTP validation to verify domain ownership.
     pub fn simple_http_validation(self) -> Result<Self> {
+        info!("Triggering simple HTTP validation");
         let (uri, _, key_authorization) = try!(self.get_http_challenge());
 
         let map = {
@@ -457,6 +486,7 @@ impl AcmeClient {
                 .to_owned();
 
             if status == "pending" {
+                debug!("Status is pending, trying again...");
                 let mut resp = try!(client.get(&uri).send());
                 res_json = {
                     let mut res_content = String::new();
@@ -481,6 +511,7 @@ impl AcmeClient {
     /// You need to generate or load a CSR first. Domain also needs to be verified first.
     pub fn sign_certificate(mut self) -> Result<Self> {
         {
+            info!("Signing certificate");
             let csr = {
                 if let None = self.domain_csr {
                     self = try!(self.gen_csr());
@@ -506,9 +537,23 @@ impl AcmeClient {
                 return Err(ErrorKind::AcmeServerError(res_json).into());
             }
 
-            let mut signed_cert: Vec<u8> = Vec::new();
-            try!(res.read_to_end(&mut signed_cert));
-            self.signed_cert = Some(signed_cert);
+            let mut crt_der = Vec::new();
+            try!(res.read_to_end(&mut crt_der));
+
+            let b64 = {
+                let config = base64::Config {
+                    char_set: base64::CharacterSet::Standard,
+                    newline: base64::Newline::LF,
+                    pad: true,
+                    line_length: Some(64),
+                };
+                format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+                        crt_der.to_base64(config))
+            };
+
+            let mut reader = BufReader::new(b64.as_bytes());
+            self.signed_cert = Some(try!(X509::from_pem(&mut reader)));
+            debug!("Certificate successfully signed")
         }
 
         Ok(self)
@@ -517,6 +562,7 @@ impl AcmeClient {
 
     /// Saves signed certificate as PEM.
     pub fn save_signed_certificate<P: AsRef<Path>>(self, path: P) -> Result<Self> {
+        debug!("Saving signed certificate");
         let mut file = try!(File::create(path));
         self.write_signed_certificate(&mut file)
     }
@@ -526,17 +572,9 @@ impl AcmeClient {
     pub fn write_signed_certificate<W: Write>(self, mut writer: &mut W) -> Result<Self> {
         let crt = try!(self.signed_cert
                        .clone()
-                       .ok_or("Signed certificate not found, sign certificate with sigh_certificate() \
+                       .ok_or("Signed certificate not found, sign certificate \
+                        with sigh_certificate() \
                         first"));
-        let b64 = {
-            let config = base64::Config {
-                char_set: base64::CharacterSet::Standard,
-                newline: base64::Newline::LF,
-                pad: true,
-                line_length: Some(64),
-            };
-            crt.to_base64(config)
-        };
 
         if let Some(url) = self.chain_url.as_ref() {
             let client = Client::new();
@@ -546,9 +584,31 @@ impl AcmeClient {
             try!(write!(&mut writer, "{}", content));
         }
 
-        try!(writeln!(&mut writer,
-                      "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
-                      b64));
+        try!(crt.write_pem(&mut writer));
+
+        Ok(self)
+    }
+
+
+    /// Revokes a signed certificate
+    ///
+    /// You need to load a certificate with load_certificate first
+    pub fn revoke_signed_certificate(self) -> Result<Self> {
+        let crt = try!(self.signed_cert
+                       .clone()
+                       .ok_or("Signed certificate not found, load a signed \
+                              certificate with load_certificate() first"));
+
+        let mut map = BTreeMap::new();
+        map.insert("certificate".to_owned(), b64(try!(crt.save_der())));
+
+        let (status, resp) = try!(self.request("revoke-cert", map));
+
+        match status {
+            StatusCode::Ok => info!("Certificate successfully revoked"),
+            StatusCode::Conflict => warn!("Certificate already revoked"),
+            _ => return Err(ErrorKind::AcmeServerError(resp).into()),
+        }
 
         Ok(self)
     }
@@ -568,7 +628,11 @@ impl AcmeClient {
         let res_json = {
             let mut res_content = String::new();
             try!(res.read_to_string(&mut res_content));
-            try!(Json::from_str(&res_content))
+            if !res_content.is_empty() {
+                try!(Json::from_str(&res_content))
+            } else {
+                true.to_json()
+            }
         };
 
         Ok((res.status, res_json))
@@ -706,10 +770,17 @@ fn acme_server_error_description(resp: &Json) -> String {
 
 
 #[cfg(test)]
+/// Tests for AcmeClient
+///
+/// Ignored tests requires properly setup domain and a working HTTP server to validate domain
+/// ownership.
+///
+/// Ignored tests are using TEST_DOMAIN and TEST_PUBLIC_DIR environment variables.
 mod tests {
     extern crate env_logger;
     use super::{AcmeClient, LETSENCRYPT_AGREEMENT};
     use std::collections::BTreeMap;
+    use std::env;
     use hyper::status::StatusCode;
 
     // Use staging API in tests
@@ -863,17 +934,16 @@ mod tests {
     }
 
     #[ignore]
-    // This test requires a properly setup http server
     #[test]
     fn test_simple_http_validation() {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.gen_user_key())
-            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.load_user_key("tests/user.key"))
+            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
             .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
+            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
             .and_then(|ac| ac.simple_http_validation());
 
         if let Err(e) = ac.as_ref() {
@@ -889,12 +959,12 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.gen_user_key())
-            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.load_user_key("tests/user.key"))
+            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
             .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.gen_csr())
             .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
+            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
             .and_then(|ac| ac.simple_http_validation())
             .and_then(|ac| ac.sign_certificate());
 
@@ -911,15 +981,51 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.gen_user_key())
-            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.load_user_key("tests/user.key"))
+            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
             .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.gen_csr())
             .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
+            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
             .and_then(|ac| ac.simple_http_validation())
             .and_then(|ac| ac.sign_certificate())
             .and_then(|ac| ac.save_signed_certificate("domain.crt"));
+
+        if let Err(e) = ac.as_ref() {
+            error!("{}", e);
+        }
+        assert!(ac.is_ok());
+    }
+
+    #[test]
+    #[ignore]
+    fn test_revoke_signed_certificate() {
+        let _ = env_logger::init();
+        // sign a certificate first
+        debug!("Signing a certificate");
+        let ac = AcmeClient::default()
+            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+            .and_then(|ac| ac.load_user_key("tests/user.key"))
+            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
+            .and_then(|ac| ac.register_account(None))
+            .and_then(|ac| ac.gen_csr())
+            .and_then(|ac| ac.identify_domain())
+            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
+            .and_then(|ac| ac.simple_http_validation())
+            .and_then(|ac| ac.sign_certificate())
+            .and_then(|ac| ac.save_signed_certificate("domain.crt"));
+        if let Err(e) = ac.as_ref() {
+            error!("{}", e);
+        }
+        assert!(ac.is_ok());
+
+        // try to revoke signed certificate
+        debug!("Trying to revoke signed certificate");
+        let ac = AcmeClient::default()
+            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+            .and_then(|ac| ac.load_user_key("tests/user.key"))
+            .and_then(|ac| ac.load_certificate("domain.crt"))
+            .and_then(|ac| ac.revoke_signed_certificate());
 
         if let Err(e) = ac.as_ref() {
             error!("{}", e);
@@ -933,10 +1039,10 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
             .and_then(|ac| ac.register_account(Some("onur@onur.im")))
             .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
+            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
             .and_then(|ac| ac.simple_http_validation())
             .and_then(|ac| ac.sign_certificate())
             .and_then(|ac| ac.save_domain_private_key("domain.key"))
