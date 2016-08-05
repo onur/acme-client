@@ -4,8 +4,8 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/onur/letsencrypt-rs/master/LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/letsencrypt-rs.svg)](https://crates.io/crates/letsencrypt-rs)
 
-Easy to use Let's Encrypt client and acme client library to issue and renew
-TLS certs.
+Easy to use Let's Encrypt client and acme client library to issue, renew and
+revoke TLS certificates.
 
 ## Installation
 
