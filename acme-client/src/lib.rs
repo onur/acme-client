@@ -1,4 +1,5 @@
-//! Easy to use Let's Encrypt compatible ACME client library.
+//! Easy to use Let's Encrypt compatible Automatic Certificate Management Environment (ACME)
+//! client library.
 //!
 //! Spec is available in <https://tools.ietf.org/html/draft-ietf-acme-acme>
 //!
@@ -9,8 +10,8 @@
 //! ```rust,no_run
 //! # use self::acme_client::AcmeClient;
 //! AcmeClient::new()
-//!     .set_domain("example.org")
-//!     .register_account(Some("contact@example.org"))
+//!     .and_then(|ac| ac.set_domain("example.org"))
+//!     .and_then(|ac| ac.register_account(Some("contact@example.org")))
 //!     .and_then(|ac| ac.identify_domain())
 //!     .and_then(|ac| ac.save_http_challenge_into("/var/www"))
 //!     .and_then(|ac| ac.simple_http_validation())
@@ -24,8 +25,8 @@
 //! ```rust,no_run
 //! # use self::acme_client::AcmeClient;
 //! AcmeClient::new()
-//!     .set_domain("example.org")
-//!     .load_user_key("user.key")
+//!     .and_then(|ac| ac.set_domain("example.org"))
+//!     .and_then(|ac| ac.load_user_key("user.key"))
 //!     .and_then(|ac| ac.load_domain_key("domain.key"))
 //!     .and_then(|ac| ac.load_csr("domain.csr"))
 //!     .and_then(|ac| ac.register_account(Some("contact@example.org")))
@@ -42,10 +43,10 @@
 //! ```rust
 //! # use self::acme_client::AcmeClient;
 //! AcmeClient::new()
-//!     .set_domain("example.org")
-//!     .gen_user_key()
-//!     .gen_domain_key()
-//!     .gen_csr()
+//!     .and_then(|ac| ac.set_domain("example.org"))
+//!     .and_then(|ac| ac.gen_user_key())
+//!     .and_then(|ac| ac.gen_domain_key())
+//!     .and_then(|ac| ac.gen_csr())
 //!     .and_then(|ac| ac.save_user_public_key("user.pub"))
 //!     .and_then(|ac| ac.save_user_private_key("user.pub"))
 //!     .and_then(|ac| ac.save_domain_public_key("domain.pub"))
@@ -101,6 +102,7 @@ mod hyperx {
 
 
 
+/// Automatic Certificate Management Environment (ACME) client
 pub struct AcmeClient {
     ca_server: String,
     agreement: String,
@@ -136,22 +138,22 @@ impl Default for AcmeClient {
 
 
 impl AcmeClient {
-    pub fn new() -> Self {
-        AcmeClient::default()
+    pub fn new() -> Result<Self> {
+        Ok(AcmeClient::default())
     }
 
 
     /// Sets domain name.
-    pub fn set_domain(mut self, domain: &str) -> Self {
+    pub fn set_domain(mut self, domain: &str) -> Result<Self> {
         self.domain = Some(domain.to_owned());
-        self
+        Ok(self)
     }
 
 
     /// Sets CA server, default is: `https://acme-v01.api.letsencrypt.org`
-    pub fn set_ca_server(mut self, ca_server: &str) -> Self {
+    pub fn set_ca_server(mut self, ca_server: &str) -> Result<Self> {
         self.ca_server = ca_server.to_owned();
-        self
+        Ok(self)
     }
 
 
@@ -163,27 +165,27 @@ impl AcmeClient {
     ///
     /// Let's Encrypt Authority X3 (IdenTrust cross-signed) certificate URL is:
     /// `https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem`
-    pub fn set_chain_url(mut self, url: &str) -> Self {
+    pub fn set_chain_url(mut self, url: &str) -> Result<Self> {
         self.chain_url = Some(url.to_owned());
-        self
+        Ok(self)
     }
 
 
     /// Generates new user key.
-    pub fn gen_user_key(mut self) -> Self {
+    pub fn gen_user_key(mut self) -> Result<Self> {
         if self.user_key.is_none() {
             self.user_key = Some(gen_key());
         }
-        self
+        Ok(self)
     }
 
 
     /// Generates new domain key.
-    pub fn gen_domain_key(mut self) -> Self {
+    pub fn gen_domain_key(mut self) -> Result<Self> {
         if self.domain_key.is_none() {
             self.domain_key = Some(gen_key());
         }
-        self
+        Ok(self)
     }
 
 
@@ -193,9 +195,9 @@ impl AcmeClient {
     /// [LE-SA-v1.1.1-August-1-2016.pdf](https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf)
     ///
     /// Let's Encrypt requires an URL to agreed user agrement.
-    pub fn set_agreement(mut self, agreement: &str) -> Self {
+    pub fn set_agreement(mut self, agreement: &str) -> Result<Self> {
         self.agreement = agreement.to_owned();
-        self
+        Ok(self)
     }
 
     /// Loads private key from PEM file path.
@@ -268,7 +270,7 @@ impl AcmeClient {
     ///
     /// You need to set a domain name with `domain()` first.
     pub fn gen_csr(mut self) -> Result<Self> {
-        self = self.gen_domain_key();
+        self = try!(self.gen_domain_key());
         let domain =
             try!(self.domain.clone().ok_or("Domain not found. Use domain() to set a domain"));
         let generator = X509Generator::new()
@@ -316,7 +318,7 @@ impl AcmeClient {
     /// file.
     pub fn register_account(mut self, email: Option<&str>) -> Result<Self> {
         if let None = self.user_key {
-            self = self.gen_user_key();
+            self = try!(self.gen_user_key());
         }
 
         let mut map = BTreeMap::new();
@@ -361,6 +363,7 @@ impl AcmeClient {
                               .ok_or("No challenge found")) {
 
             // skip challenges other than http
+            // FIXME: http-01 is Let's Encrypt specific
             if !challenge.as_object()
                 .and_then(|obj| obj.get("type"))
                     .and_then(|t| t.as_string())
@@ -714,21 +717,21 @@ mod tests {
 
     #[test]
     fn test_gen_user_key() {
-        assert!(AcmeClient::default().gen_user_key().user_key.is_some());
+        assert!(AcmeClient::new().and_then(|ac| ac.gen_user_key()).unwrap().user_key.is_some());
     }
 
 
     #[test]
     fn test_gen_domain_key() {
-        assert!(AcmeClient::default().gen_domain_key().domain_key.is_some());
+        assert!(AcmeClient::new().and_then(|ac| ac.gen_domain_key()).unwrap().domain_key.is_some());
     }
 
 
     #[test]
     fn test_gen_csr() {
-        assert!(AcmeClient::default()
-                .set_domain("example.org")
-                .gen_csr()
+        assert!(AcmeClient::new()
+                .and_then(|ac| ac.set_domain("example.org"))
+                .and_then(|ac| ac.gen_csr())
                 .unwrap()
                 .domain_csr
                 .is_some());
@@ -753,9 +756,9 @@ mod tests {
     fn test_save_keys() {
         let res = AcmeClient::default()
             .set_domain("example.org")
-            .gen_user_key()
-            .gen_domain_key()
-            .save_user_private_key("user.key")
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.save_user_private_key("user.key"))
             .and_then(|ac| ac.gen_csr())
             .and_then(|ac| ac.save_user_public_key("user.pub"))
             .and_then(|ac| ac.save_domain_private_key("domain.key"))
@@ -773,7 +776,7 @@ mod tests {
 
     #[test]
     fn test_jws() {
-        let ac = AcmeClient::default().gen_user_key();
+        let ac = AcmeClient::default().gen_user_key().unwrap();
         let mut map = BTreeMap::new();
         map.insert("resource".to_owned(), "new-reg".to_owned());
         map.insert("aggreement".to_owned(), LETSENCRYPT_AGREEMENT.to_owned());
@@ -784,7 +787,9 @@ mod tests {
     #[test]
     fn test_request() {
         let _ = env_logger::init();
-        let ac = AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER).gen_user_key();
+        let ac = AcmeClient::new()
+            .and_then(|ac| ac.set_ca_server(LETSENCRYPT_STAGING_CA_SERVER))
+            .and_then(|ac| ac.gen_user_key()).unwrap();
         let mut map = BTreeMap::new();
         map.insert("aggreement".to_owned(), LETSENCRYPT_AGREEMENT.to_owned());
         let res = ac.request("new-reg", map);
@@ -798,12 +803,16 @@ mod tests {
     #[test]
     fn test_register_account() {
         let _ = env_logger::init();
-        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER).gen_user_key().register_account(None).is_ok());
-        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER).gen_user_key().register_account(Some("example@example.org")).is_ok());
-        assert!(AcmeClient::default()
-                .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .gen_user_key()
-                .register_account(None)
+        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+                .and_then(|ac| ac.gen_user_key())
+                .and_then(|ac| ac.register_account(None))
+                .is_ok());
+        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+                .and_then(|ac| ac.gen_user_key())
+                .and_then(|ac| ac.register_account(Some("example@example.org"))).is_ok());
+        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+                .and_then(|ac| ac.gen_user_key())
+                .and_then(|ac| ac.register_account(None))
                 .and_then(|ac| ac.register_account(None)) // registration of already register_accounted user
                 .is_ok());
     }
@@ -811,11 +820,10 @@ mod tests {
     #[test]
     fn test_identify_domain() {
         let _ = env_logger::init();
-        assert!(AcmeClient::default()
-                .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .gen_user_key()
-                .set_domain("example.org")
-                .register_account(None)
+        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+                .and_then(|ac| ac.gen_user_key())
+                .and_then(|ac| ac.set_domain("example.org"))
+                .and_then(|ac| ac.register_account(None))
                 .and_then(|ac| ac.identify_domain())
                 .is_ok());
     }
@@ -825,9 +833,9 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .gen_user_key()
-            .set_domain("example.org")
-            .register_account(None)
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.set_domain("example.org"))
+            .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.identify_domain())
             .and_then(|ac| ac.get_http_challenge());
         assert!(ac.is_ok());
@@ -844,9 +852,9 @@ mod tests {
         let _ = env_logger::init();
         assert!(AcmeClient::default()
                 .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .gen_user_key()
-                .set_domain("example.org")
-                .register_account(None)
+                .and_then(|ac| ac.gen_user_key())
+                .and_then(|ac| ac.set_domain("example.org"))
+                .and_then(|ac| ac.register_account(None))
                 .and_then(|ac| ac.identify_domain())
                 .and_then(|ac| ac.save_http_challenge_into("test"))
                 .is_ok());
@@ -861,9 +869,9 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .gen_user_key()
-            .set_domain("onur.yapaygerizeka.xyz")
-            .register_account(None)
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.identify_domain())
             .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
             .and_then(|ac| ac.simple_http_validation());
@@ -881,9 +889,9 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .gen_user_key()
-            .set_domain("onur.yapaygerizeka.xyz")
-            .register_account(None)
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.gen_csr())
             .and_then(|ac| ac.identify_domain())
             .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
@@ -903,9 +911,9 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .gen_user_key()
-            .set_domain("onur.yapaygerizeka.xyz")
-            .register_account(None)
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.gen_csr())
             .and_then(|ac| ac.identify_domain())
             .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
@@ -925,8 +933,8 @@ mod tests {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .set_domain("onur.yapaygerizeka.xyz")
-            .register_account(Some("onur@onur.im"))
+            .and_then(|ac| ac.set_domain("onur.yapaygerizeka.xyz"))
+            .and_then(|ac| ac.register_account(Some("onur@onur.im")))
             .and_then(|ac| ac.identify_domain())
             .and_then(|ac| ac.save_http_challenge_into("/mnt/onur-home-server/public_html"))
             .and_then(|ac| ac.simple_http_validation())

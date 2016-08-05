@@ -76,18 +76,19 @@ fn main() {
         .get_matches();
 
 
-    let mut ac = AcmeClient::new();
+    let mut ac = AcmeClient::new().expect("Failed to create new AcmeClient");
 
     if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
         ac = ac.load_csr(csr_path).expect("Failed to load CSR");
     }
 
     if let Some(domain) = matches.value_of("DOMAIN") {
-        ac = ac.set_domain(domain);
+        ac = ac.set_domain(domain).expect("Failed to set domain")
     }
 
     if matches.is_present("CHAIN") {
-        ac = ac.set_chain_url("https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem");
+        ac = ac.set_chain_url("https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem")
+            .expect("Failed to set chain URL")
     }
 
     if let Some(bit_length) = matches.value_of("BIT_LENGTH") {

@@ -8,14 +8,18 @@ TLS certs.
 
 ## Installation
 
-letsencrypt-rs can be installed with: `cargo install letsencrypt-rs`
+You can install letsencrypt-rs with:
+`cargo install --git https://github.com/onur/letsencrypt-rs`
+
+This program is using a specific version of openssl crate currently,
+and it will be available in crates.io when openssl gets upgraded.
 
 
 ## Usage
 
 letsencrypt-rs is using openssl library to generate all required keys
 and certificate signing request. You don't need to run any openssl command.
-But also you can use your already generated keys and CSR if you want.
+But also, you can use your already generated keys and CSR if you want.
 You don't need any root access while running letsencrypt-rs.
 
 letsencrypt-rs is using simple HTTP validation to pass Let's Encrypt DNS
@@ -32,7 +36,7 @@ This command will generate a user key, domain key and X509 certificate signing
 request. It will register a new user account and identify domain ownership
 by putting required challenge token into `/var/www/.well-known/acme-challenge/`.
 And if everything goes well, it will save domain private key into `domain.key`
-file and signed certificate into `domain.crt`.
+and signed certificate into `domain.crt`.
 
 You can also use `--email` option to provide a contact addres on registration.
 
@@ -93,12 +97,12 @@ OPTIONS:
 ## `acme-client` crate
 
 `letsencrypt-rs` is powered by acme-client library. You can read documentation
-in [docs.rs](https://docs.rs/acme-client). An example of `AcmeClient`:
+in [docs.rs](https://docs.rs/acme-client). Example usage of `AcmeClient`:
 
 ```rust
 AcmeClient::new()
-    .set_domain("example.org")
-    .register_account(Some("contact@example.org"))
+    .and_then(|ac| ac.set_domain("example.org"))
+    .and_then(|ac| ac.register_account(Some("contact@example.org")))
     .and_then(|ac| ac.identify_domain())
     .and_then(|ac| ac.save_http_challenge_into("/var/www"))
     .and_then(|ac| ac.simple_http_validation())
