@@ -57,6 +57,7 @@
 //! Revoking signed certificate:
 //! 
 //! ```rust,no_run
+//! # use self::acme_client::AcmeClient;
 //! AcmeClient::new()
 //!     .and_then(|ac| ac.load_user_key("tests/user.key"))
 //!     .and_then(|ac| ac.load_certificate("domain.crt"))
