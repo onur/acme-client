@@ -18,13 +18,13 @@ and it will soon be available in crates.io when openssl gets updated.
 
 ## Usage
 
-letsencrypt-rs is using openssl library to generate all required keys
+letsencrypt-rs is using the openssl library to generate all required keys
 and certificate signing request. You don't need to run any openssl command.
-But also, you can use your already generated keys and CSR if you want.
-You don't need any root access while running letsencrypt-rs.
+You can use your already generated keys and CSR if you want and you don't need
+any root access while running letsencrypt-rs.
 
-letsencrypt-rs is using simple HTTP validation to pass Let's Encrypt DNS
-validation challenge. You need a working HTTP server to host challenge file.
+letsencrypt-rs is using simple HTTP validation to pass Let's Encrypt's DNS
+validation challenge. You need a working HTTP server to host the challenge file.
 
 
 ### Easiest way to sign a certificate
@@ -34,12 +34,12 @@ letsencrypt-rs -s -D example.org -P /var/www -K domain.key -o domain.crt
 ```
 
 This command will generate a user key, domain key and X509 certificate signing
-request. It will register a new user account and identify domain ownership
-by putting required challenge token into `/var/www/.well-known/acme-challenge/`.
-And if everything goes well, it will save domain private key into `domain.key`
-and signed certificate into `domain.crt`.
+request. It will register a new user account and identify the domain ownership
+by putting the required challenge token into `/var/www/.well-known/acme-challenge/`.
+If everything goes well, it will save the domain private key into `domain.key`
+and the signed certificate into `domain.crt`.
 
-You can also use `--email` option to provide a contact addres on registration.
+You can also use the `--email` option to provide a contact adress on registration.
 
 
 
@@ -59,7 +59,7 @@ letsencrypt-rs \
 ```
 
 This will not generate any key and it will use provided keys to sign
-certificate.
+the certificate.
 
 
 ### Revoking a signed certificate
@@ -77,7 +77,7 @@ letsencrypt-rs \
 
 ## Options
 
-You can get list of all available options with `letsencrypt-rs --help`:
+You can get a list of all available options with `letsencrypt-rs --help`:
 
 ```
 letsencrypt-rs 0.1.0
@@ -117,8 +117,9 @@ OPTIONS:
 
 ## `acme-client` crate
 
-`letsencrypt-rs` is powered by acme-client library. You can read documentation
-in [docs.rs](https://docs.rs/acme-client). Example usage of `AcmeClient`:
+`letsencrypt-rs` is powered by the acme-client library. You can read the
+documentation in [docs.rs](https://docs.rs/acme-client). Example usage of
+`AcmeClient`:
 
 ```rust
 AcmeClient::new()
