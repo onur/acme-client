@@ -1,6 +1,6 @@
 [package]
 name = "letsencrypt-rs"
-description = "Easy to use Let's Encrypt client to issue and renew TLS certs"
+description = "Easy to use Let's Encrypt client to issue, renew and revoke TLS certs"
 version = "0.1.0"
 authors = ["Onur Aslan <onur@onur.im>"]
 license = "MIT"

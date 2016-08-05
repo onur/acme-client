@@ -1,6 +1,6 @@
 [package]
 name = "acme-client"
-description = "Easy to use ACME client library to issue and renew TLS certificates"
+description = "Easy to use ACME client library to issue, renew and revoke TLS certificates"
 version = "0.1.0"
 authors = ["Onur Aslan <onur@onur.im>"]
 license = "MIT"
