@@ -12,8 +12,8 @@ TLS certs.
 You can install letsencrypt-rs with:
 `cargo install --git https://github.com/onur/letsencrypt-rs`
 
-This program is using a specific version of openssl crate currently,
-and it will be available in crates.io when openssl gets upgraded.
+`letsencrypt-rs` is currently using a specific version of openssl crate,
+and it will soon be available in crates.io when openssl gets updated.
 
 
 ## Usage
@@ -30,7 +30,7 @@ validation challenge. You need a working HTTP server to host challenge file.
 ### Easiest way to sign a certificate
 
 ```sh
-letsencrypt-rs -D example.org -P /var/www -K domain.key -o domain.crt
+letsencrypt-rs -s -D example.org -P /var/www -K domain.key -o domain.crt
 ```
 
 This command will generate a user key, domain key and X509 certificate signing
@@ -49,6 +49,7 @@ You can use your own RSA keys for user registration and domain. For example:
 
 ```sh
 letsencrypt-rs \
+  --sign \
   --user-key user.key \
   --domain-key domain.key \
   --domain-csr domain.csr \
@@ -61,6 +62,19 @@ This will not generate any key and it will use provided keys to sign
 certificate.
 
 
+### Revoking a signed certificate
+
+letsencrypt-rs can also revoke a signed certificate. You need to use your
+user key and a signed certificate to revoke.
+
+```sh
+letsencrypt-rs \
+  --revoke \
+  --user-key user.key \
+  --domain-crt signed.crt
+```
+
+
 ## Options
 
 You can get list of all available options with `letsencrypt-rs --help`:
@@ -70,27 +84,33 @@ letsencrypt-rs 0.1.0
 Easy to use Let's Encrypt client to issue and renew TLS certs
 
 USAGE:
-    letsencrypt-rs [FLAGS] [OPTIONS] --domain <DOMAIN> --public-dir <PUBLIC_DIR>
+    letsencrypt-rs [FLAGS] [OPTIONS]
 
 FLAGS:
     -c, --chain      Chains the signed certificate with Let's Encrypt Authority X3 (IdenTrust
                      cross-signed) intermediate certificate.
+    -r, --revoke     Revokes a signed certificate. This command requires --user-key and
+                     --domain-csr options.
+    -s, --sign       Signs a certificate. This is default behavior and this command requires
+                     --domain and --public-dir options.
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-        --bit-length <BIT_LENGHT>               Set bit length for CSR. Default is 2048.
+    -B, --bit-length <BIT_LENGHT>               Bit length for CSR. Default is 2048.
     -D, --domain <DOMAIN>                       Name of domain for identification.
+    -T, --domain-crt <DOMAIN_CRT>               Path of signed domain certificate. This is required
+                                                for revoke certificate.
     -C, --domain-csr <DOMAIN_CSR>               Path of domain certificate signing request.
         --domain-key <DOMAIN_KEY_PATH>          Domain private key path to use it in CSR
                                                 generation.
     -E, --email <EMAIL>                         Contact email address (optional).
     -P, --public-dir <PUBLIC_DIR>               Directory to save ACME simple http challenge.
-        --save-csr <SAVE_DOMAIN_CSR>            Path to save domain certificate signing request.
+    -S, --save-csr <SAVE_DOMAIN_CSR>            Path to save domain certificate signing request.
     -K, --save-domain-key <SAVE_DOMAIN_KEY>     Path to save domain private key.
     -o, --save-crt <SAVE_SIGNED_CERTIFICATE>    Path to save signed certificate. Default is STDOUT.
-    -U, --save-user-key <SAVE_USER_KEY>         Path to save private user key.
-        --user-key <USER_KEY_PATH>              User private key path to use it in account
+        --save-user-key <SAVE_USER_KEY>         Path to save private user key.
+    -U, --user-key <USER_KEY_PATH>              User private key path to use it in account
                                                 registration.
 ```
 
@@ -111,8 +131,3 @@ AcmeClient::new()
     .and_then(|ac| ac.save_domain_private_key("domain.key"))
     .and_then(|ac| ac.save_signed_certificate("domain.crt"));
 ```
-
-
-## TODO
-
-* Revoke certificate.
