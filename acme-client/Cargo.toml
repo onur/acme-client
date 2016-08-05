@@ -1,0 +1,12 @@
+[package]
+name = "acme-client"
+description = "Easy to use ACME client library to issue and renew TLS certificates"
+version = "0.0.0"
+authors = ["Onur Aslan <onur@onur.im>"]
+license = "MIT"
+keywords = ["letsencrypt", "acme"]
+readme = "../README.md"
+documentation = "https://docs.rs/acme-client"
+repository = "https://github.com/onur/letsencrypt-rs"
+
+[dependencies]
