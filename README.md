@@ -81,7 +81,7 @@ You can get a list of all available options with `letsencrypt-rs --help`:
 
 ```
 letsencrypt-rs 0.1.0
-Easy to use Let's Encrypt client to issue and renew TLS certs
+Easy to use Let's Encrypt client to issue, renew and revoke TLS certificates
 
 USAGE:
     letsencrypt-rs [FLAGS] [OPTIONS]
@@ -99,9 +99,9 @@ FLAGS:
 OPTIONS:
     -B, --bit-length <BIT_LENGHT>               Bit length for CSR. Default is 2048.
     -D, --domain <DOMAIN>                       Name of domain for identification.
-    -T, --domain-crt <DOMAIN_CRT>               Path of signed domain certificate. This is required
-                                                for revoke certificate.
-    -C, --domain-csr <DOMAIN_CSR>               Path of domain certificate signing request.
+    -T, --domain-crt <DOMAIN_CRT>               Path to signed domain certificate. This is required
+                                                to revoke a certificate.
+    -C, --domain-csr <DOMAIN_CSR>               Path to domain certificate signing request.
         --domain-key <DOMAIN_KEY_PATH>          Domain private key path to use it in CSR
                                                 generation.
     -E, --email <EMAIL>                         Contact email address (optional).
