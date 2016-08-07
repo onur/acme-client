@@ -76,7 +76,7 @@ extern crate rustc_serialize;
 
 
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::io;
 use std::io::{BufReader, Read, Write};
 use std::collections::BTreeMap;
@@ -125,6 +125,7 @@ pub struct AcmeClient<'ctx> {
     http_challenge: Option<(String, String, String)>,
     signed_cert: Option<X509<'ctx>>,
     chain_url: Option<String>,
+    saved_challenge_path: Option<PathBuf>,
 }
 
 
@@ -142,6 +143,7 @@ impl<'ctx> Default for AcmeClient<'ctx> {
             http_challenge: None,
             signed_cert: None,
             chain_url: None,
+            saved_challenge_path: None,
         }
     }
 }
@@ -437,16 +439,18 @@ impl<'ctx> AcmeClient<'ctx> {
 
 
     /// Saves validation token into `{path}/.well-known/acme-challenge/{token}`.
-    pub fn save_http_challenge_into<P: AsRef<Path>>(self, path: P) -> Result<Self> {
+    pub fn save_http_challenge_into<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
         let (_, token, key_authorization) = try!(self.get_http_challenge());
 
         use std::fs::create_dir_all;
         let path = path.as_ref().join(".well-known").join("acme-challenge");
-        debug!("Saving validation token into: {:?}", path);
+        debug!("Saving validation token into: {:?}", &path);
         try!(create_dir_all(&path));
 
         let mut file = try!(File::create(path.join(&token)));
         try!(writeln!(&mut file, "{}", key_authorization));
+
+        self.saved_challenge_path = Some(path.join(&token).to_path_buf());
 
         Ok(self)
     }
@@ -692,6 +696,16 @@ impl<'ctx> AcmeClient<'ctx> {
             .get::<hyperx::ReplayNonce>()
             .ok_or("Replay-Nonce header not found".into())
             .and_then(|nonce| Ok(nonce.as_str().to_string()))
+    }
+}
+
+
+impl<'ctx> Drop for AcmeClient<'ctx> {
+    fn drop(&mut self) {
+        if let Some(path) = self.saved_challenge_path.as_ref() {
+            use std::fs::remove_file;
+            let _ = remove_file(path);
+        }
     }
 }
 
