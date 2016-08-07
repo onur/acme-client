@@ -757,11 +757,11 @@ error_chain! {
     }
 
     foreign_links {
-        openssl::ssl::error::SslError, SslError, "SslError";
-        io::Error, IoError, "IoError";
-        hyper::Error, HyperError, "HyperError";
-        rustc_serialize::json::EncoderError, JsonEncoderError, "JsonEncoderError";
-        rustc_serialize::json::ParserError, JsonParserError, "JsonParserError";
+        openssl::ssl::error::SslError, SslError;
+        io::Error, IoError;
+        hyper::Error, HyperError;
+        rustc_serialize::json::EncoderError, JsonEncoderError;
+        rustc_serialize::json::ParserError, JsonParserError;
     }
 
     errors {
