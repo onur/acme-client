@@ -11,7 +11,7 @@ dependencies = [
 name = "acme-client"
 version = "0.1.0"
 dependencies = [
- "error-chain 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "error-chain 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.9.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "openssl 0.7.14 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "error-chain"
-version = "0.2.2"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "backtrace 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
