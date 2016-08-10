@@ -30,7 +30,7 @@ validation challenge. You need a working HTTP server to host the challenge file.
 ### Easiest way to sign a certificate
 
 ```sh
-letsencrypt-rs sign -D example.org -P /var/www -K domain.key -o domain.crt
+letsencrypt-rs sign -D example.org -P /var/www -k domain.key -o domain.crt
 ```
 
 This command will generate a user key, domain key and X509 certificate signing
@@ -94,14 +94,14 @@ OPTIONS:
     -B, --bit-length <BIT_LENGHT>               Bit length for CSR. Default is 2048.
     -D, --domain <DOMAIN>                       Name of domain for identification.
     -C, --domain-csr <DOMAIN_CSR>               Path to domain certificate signing request.
-        --domain-key <DOMAIN_KEY_PATH>          Domain private key path to use it in CSR
+    -K  --domain-key <DOMAIN_KEY_PATH>          Domain private key path to use it in CSR
                                                 generation.
     -E, --email <EMAIL>                         Contact email address (optional).
     -P, --public-dir <PUBLIC_DIR>               Directory to save ACME simple http challenge.
     -S, --save-csr <SAVE_DOMAIN_CSR>            Path to save domain certificate signing request.
-    -K, --save-domain-key <SAVE_DOMAIN_KEY>     Path to save domain private key.
+    -k, --save-domain-key <SAVE_DOMAIN_KEY>     Path to save domain private key.
     -o, --save-crt <SAVE_SIGNED_CERTIFICATE>    Path to save signed certificate. Default is STDOUT.
-        --save-user-key <SAVE_USER_KEY>         Path to save private user key.
+    -u  --save-user-key <SAVE_USER_KEY>         Path to save private user key.
     -U, --user-key <USER_KEY_PATH>              User private key path to use it in account
                                                 registration.
 ```
