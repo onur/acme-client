@@ -14,10 +14,7 @@ error-chain = "^0.4.2"
 log = "^0.3.6"
 rustc-serialize = "^0.3.19"
 hyper = "^0.9.10"
-openssl = "^0.7.14"
+openssl = { version = "^0.8.0", features = [ "x509_generator_request" ] }
 
 [dev-dependencies]
 env_logger = "^0.3"
-
-[replace]
-"openssl:0.7.14" = { path = "../rust-openssl/openssl" }

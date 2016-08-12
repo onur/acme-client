@@ -78,9 +78,10 @@ extern crate rustc_serialize;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io;
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::collections::BTreeMap;
 
+use openssl::crypto::rsa::RSA;
 use openssl::crypto::pkey::PKey;
 use openssl::crypto::hash::{hash, Type};
 use openssl::x509::{X509, X509Req, X509Generator};
@@ -95,7 +96,7 @@ use rustc_serialize::json::{Json, ToJson, encode};
 
 
 /// Default bit lenght for RSA keys and `X509_REQ`
-const BIT_LENGTH: usize = 4096;
+const BIT_LENGTH: u32 = 4096;
 
 const LETSENCRYPT_CA_SERVER: &'static str = "https://acme-v01.api.letsencrypt.org";
 const LETSENCRYPT_AGREEMENT: &'static str = "https://letsencrypt.org/documents/LE-SA-v1.1.\
@@ -113,7 +114,7 @@ mod hyperx {
 
 
 /// Automatic Certificate Management Environment (ACME) client
-pub struct AcmeClient<'ctx> {
+pub struct AcmeClient {
     ca_server: String,
     agreement: String,
     bit_length: u32,
@@ -123,13 +124,13 @@ pub struct AcmeClient<'ctx> {
     domain_csr: Option<X509Req>,
     challenges: Option<Json>,
     http_challenge: Option<(String, String, String)>,
-    signed_cert: Option<X509<'ctx>>,
+    signed_cert: Option<X509>,
     chain_url: Option<String>,
     saved_challenge_path: Option<PathBuf>,
 }
 
 
-impl<'ctx> Default for AcmeClient<'ctx> {
+impl Default for AcmeClient {
     fn default() -> Self {
         AcmeClient {
             ca_server: LETSENCRYPT_CA_SERVER.to_owned(),
@@ -149,7 +150,7 @@ impl<'ctx> Default for AcmeClient<'ctx> {
 }
 
 
-impl<'ctx> AcmeClient<'ctx> {
+impl AcmeClient {
     pub fn new() -> Result<Self> {
         Ok(AcmeClient::default())
     }
@@ -187,7 +188,7 @@ impl<'ctx> AcmeClient<'ctx> {
     pub fn gen_user_key(mut self) -> Result<Self> {
         debug!("Generating user key");
         if self.user_key.is_none() {
-            self.user_key = Some(gen_key());
+            self.user_key = Some(try!(gen_key()));
         }
         Ok(self)
     }
@@ -197,7 +198,7 @@ impl<'ctx> AcmeClient<'ctx> {
     pub fn gen_domain_key(mut self) -> Result<Self> {
         debug!("Generating domain key");
         if self.domain_key.is_none() {
-            self.domain_key = Some(gen_key());
+            self.domain_key = Some(try!(gen_key()));
         }
         Ok(self)
     }
@@ -288,7 +289,6 @@ impl<'ctx> AcmeClient<'ctx> {
         let domain =
             try!(self.domain.clone().ok_or("Domain not found. Use domain() to set a domain"));
         let generator = X509Generator::new()
-            .set_bitlength(self.bit_length)
             .set_valid_period(365)
             .add_name("CN".to_owned(), domain)
             .set_sign_hash(Type::SHA256)
@@ -305,8 +305,13 @@ impl<'ctx> AcmeClient<'ctx> {
 
     /// Loads CSR from PEM file.
     pub fn load_csr<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
-        let mut file = try!(File::open(path));
-        self.domain_csr = Some(try!(X509Req::from_pem(&mut file)));
+        let content = {
+            let mut file = try!(File::open(path));
+            let mut content = Vec::new();
+            try!(file.read_to_end(&mut content));
+            content
+        };
+        self.domain_csr = Some(try!(X509Req::from_pem(&content)));
         Ok(self)
     }
 
@@ -318,7 +323,8 @@ impl<'ctx> AcmeClient<'ctx> {
             let csr = try!(self.domain_csr
                            .as_ref()
                            .ok_or("CSR not found"));
-            try!(csr.write_pem(&mut file));
+            let pem = try!(csr.to_pem());
+            try!(file.write_all(&pem));
         }
 
         Ok(self)
@@ -330,8 +336,13 @@ impl<'ctx> AcmeClient<'ctx> {
     ///
     /// This is required if you want to revoke a signed certificate
     pub fn load_certificate<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
-        let mut file = try!(File::open(path));
-        self.signed_cert = Some(try!(X509::from_pem(&mut file)));
+        let content = {
+            let mut file = try!(File::open(path));
+            let mut content = Vec::new();
+            try!(file.read_to_end(&mut content));
+            content
+        };
+        self.signed_cert = Some(try!(X509::from_pem(&content)));
         Ok(self)
     }
 
@@ -418,7 +429,7 @@ impl<'ctx> AcmeClient<'ctx> {
             let key_authorization =
                 format!("{}.{}",
                         token,
-                        b64(hash(Type::SHA256, &try!(encode(&try!(self.jwk()))).into_bytes())));
+                        b64(try!(hash(Type::SHA256, &try!(encode(&try!(self.jwk()))).into_bytes()))));
 
             self.http_challenge = Some((uri, token, key_authorization));
         }
@@ -431,7 +442,6 @@ impl<'ctx> AcmeClient<'ctx> {
     ///
     /// Get challenges first with `identify_domain()`.
     pub fn get_http_challenge(&self) -> Result<(String, String, String)> {
-        // self.http_challenge.clone().ok_or("HTTP challenge not found".into())
         let (uri, token, key_authorization) =
             try!(self.http_challenge.clone().ok_or("HTTP challenge not found"));
         Ok((uri, token, key_authorization))
@@ -525,7 +535,7 @@ impl<'ctx> AcmeClient<'ctx> {
             };
             let mut map = BTreeMap::new();
             map.insert("resource".to_owned(), "new-cert".to_owned());
-            map.insert("csr".to_owned(), b64(try!(csr.save_der())));
+            map.insert("csr".to_owned(), b64(try!(csr.to_der())));
 
             let client = Client::new();
             let jws = try!(self.jws(map));
@@ -556,8 +566,7 @@ impl<'ctx> AcmeClient<'ctx> {
                         crt_der.to_base64(config))
             };
 
-            let mut reader = BufReader::new(b64.as_bytes());
-            self.signed_cert = Some(try!(X509::from_pem(&mut reader)));
+            self.signed_cert = Some(try!(X509::from_pem(&b64.as_bytes())));
             debug!("Certificate successfully signed")
         }
 
@@ -575,21 +584,24 @@ impl<'ctx> AcmeClient<'ctx> {
 
     /// Writes signed certificate to writer
     pub fn write_signed_certificate<W: Write>(self, mut writer: &mut W) -> Result<Self> {
-        let crt = try!(self.signed_cert
-                       .clone()
-                       .ok_or("Signed certificate not found, sign certificate \
+        {
+            let crt = try!(self.signed_cert
+                           .as_ref()
+                           .ok_or("Signed certificate not found, sign certificate \
                         with sigh_certificate() \
                         first"));
 
-        if let Some(url) = self.chain_url.as_ref() {
-            let client = Client::new();
-            let mut res = try!(client.get(url).send());
-            let mut content = String::new();
-            try!(res.read_to_string(&mut content));
-            try!(write!(&mut writer, "{}", content));
-        }
+            if let Some(url) = self.chain_url.as_ref() {
+                let client = Client::new();
+                let mut res = try!(client.get(url).send());
+                let mut content = String::new();
+                try!(res.read_to_string(&mut content));
+                try!(write!(&mut writer, "{}", content));
+            }
 
-        try!(crt.write_pem(&mut writer));
+            let pem = try!(crt.to_pem());
+            try!(writer.write_all(&pem));
+        }
 
         Ok(self)
     }
@@ -599,15 +611,17 @@ impl<'ctx> AcmeClient<'ctx> {
     ///
     /// You need to load a certificate with load_certificate first
     pub fn revoke_signed_certificate(self) -> Result<Self> {
-        let crt = try!(self.signed_cert
-                       .clone()
-                       .ok_or("Signed certificate not found, load a signed \
+        let (status, resp) = {
+            let crt = try!(self.signed_cert
+                           .as_ref()
+                           .ok_or("Signed certificate not found, load a signed \
                               certificate with load_certificate() first"));
 
-        let mut map = BTreeMap::new();
-        map.insert("certificate".to_owned(), b64(try!(crt.save_der())));
+            let mut map = BTreeMap::new();
+            map.insert("certificate".to_owned(), b64(try!(crt.to_der())));
 
-        let (status, resp) = try!(self.request("revoke-cert", map));
+            try!(self.request("revoke-cert", map))
+        };
 
         match status {
             StatusCode::Ok => info!("Certificate successfully revoked"),
@@ -646,7 +660,7 @@ impl<'ctx> AcmeClient<'ctx> {
 
     /// Makes a Flattened JSON Web Signature from payload
     fn jws<T: ToJson>(&self, payload: T) -> Result<String> {
-        let rsa = try!(self.user_key.as_ref().ok_or("Key not found")).get_rsa();
+        let rsa = try!(try!(self.user_key.as_ref().ok_or("Key not found")).get_rsa());
         let nonce = try!(self.get_nonce());
         let mut data: BTreeMap<String, Json> = BTreeMap::new();
 
@@ -667,8 +681,8 @@ impl<'ctx> AcmeClient<'ctx> {
 
         // signature: b64 of hash of signature of {proctected64}.{payload64}
         data.insert("signature".to_owned(), {
-            let hash = hash(Type::SHA256,
-                            &format!("{}.{}", protected64, payload64).into_bytes());
+            let hash = try!(hash(Type::SHA256,
+                                 &format!("{}.{}", protected64, payload64).into_bytes()));
             b64(try!(rsa.sign(Type::SHA256, &hash))).to_json()
         });
 
@@ -680,11 +694,11 @@ impl<'ctx> AcmeClient<'ctx> {
 
     /// Returns jwk field of jws header
     fn jwk(&self) -> Result<Json> {
-        let rsa = try!(self.user_key.as_ref().ok_or("Key not found")).get_rsa();
+        let rsa = try!(try!(self.user_key.as_ref().ok_or("Key not found")).get_rsa());
         let mut jwk: BTreeMap<String, String> = BTreeMap::new();
-        jwk.insert("e".to_owned(), b64(try!(rsa.e()).to_vec()));
+        jwk.insert("e".to_owned(), b64(try!(rsa.e().ok_or("e not found in RSA key")).to_vec()));
         jwk.insert("kty".to_owned(), "RSA".to_owned());
-        jwk.insert("n".to_owned(), b64(try!(rsa.n()).to_vec()));
+        jwk.insert("n".to_owned(), b64(try!(rsa.n().ok_or("n not found in RSA key")).to_vec()));
         Ok(jwk.to_json())
     }
 
@@ -700,7 +714,7 @@ impl<'ctx> AcmeClient<'ctx> {
 }
 
 
-impl<'ctx> Drop for AcmeClient<'ctx> {
+impl Drop for AcmeClient {
     fn drop(&mut self) {
         if let Some(path) = self.saved_challenge_path.as_ref() {
             use std::fs::remove_file;
@@ -710,28 +724,31 @@ impl<'ctx> Drop for AcmeClient<'ctx> {
 }
 
 
-fn gen_key() -> PKey {
-    let mut key = PKey::new();
-    key.gen(BIT_LENGTH);
-    key
+fn gen_key() -> Result<PKey> {
+    let rsa = try!(RSA::generate(BIT_LENGTH));
+    let key = try!(PKey::from_rsa(rsa));
+    Ok(key)
 }
 
 
 fn load_private_key<P: AsRef<Path>>(path: P) -> Result<PKey> {
     let mut file = try!(File::open(path));
-    let key = try!(PKey::private_key_from_pem(&mut file));
+    let mut content = Vec::new();
+    try!(file.read_to_end(&mut content));
+    let key = try!(PKey::private_key_from_pem(&content));
     Ok(key)
 }
 
 
 fn save_key<P: AsRef<Path>>(key: &PKey, is_public: bool, path: P) -> Result<()> {
-    let key = key.get_rsa();
-    let mut file = try!(File::create(path));
-    if is_public {
-        try!(key.public_key_to_pem(&mut file));
+    let key = try!(key.get_rsa());
+    let content = if is_public {
+        try!(key.public_key_to_pem())
     } else {
-        try!(key.private_key_to_pem(&mut file));
-    }
+        try!(key.private_key_to_pem())
+    };
+    let mut file = try!(File::create(path));
+    try!(file.write_all(&content));
     Ok(())
 }
 
@@ -757,7 +774,7 @@ error_chain! {
     }
 
     foreign_links {
-        openssl::ssl::error::SslError, SslError;
+        openssl::error::ErrorStack, OpenSslErrorStack;
         io::Error, IoError;
         hyper::Error, HyperError;
         rustc_serialize::json::EncoderError, JsonEncoderError;

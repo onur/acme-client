@@ -13,6 +13,3 @@ repository = "https://github.com/onur/letsencrypt-rs"
 acme-client = { version = "0.1", path = "acme-client" }
 clap = "^2.10.0"
 env_logger = "^0.3"
-
-[replace]
-"openssl:0.7.14" = { path = "rust-openssl/openssl" }
