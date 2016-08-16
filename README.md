@@ -10,10 +10,7 @@ revoke TLS certificates.
 ## Installation
 
 You can install letsencrypt-rs with:
-`cargo install --git https://github.com/onur/letsencrypt-rs`
-
-`letsencrypt-rs` is currently using a specific version of openssl crate,
-and it will soon be available in crates.io when openssl gets updated.
+`cargo install letsencrypt-rs`
 
 
 ## Usage
@@ -27,7 +24,7 @@ letsencrypt-rs is using simple HTTP validation to pass Let's Encrypt's DNS
 validation challenge. You need a working HTTP server to host the challenge file.
 
 
-### Easiest way to sign a certificate
+### Sign a certificate
 
 ```sh
 letsencrypt-rs sign -D example.org -P /var/www -k domain.key -o domain.crt
