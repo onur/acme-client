@@ -96,7 +96,7 @@ use rustc_serialize::json::{Json, ToJson, encode};
 
 
 /// Default bit lenght for RSA keys and `X509_REQ`
-const BIT_LENGTH: u32 = 4096;
+const BIT_LENGTH: u32 = 2048;
 
 const LETSENCRYPT_CA_SERVER: &'static str = "https://acme-v01.api.letsencrypt.org";
 const LETSENCRYPT_AGREEMENT: &'static str = "https://letsencrypt.org/documents/LE-SA-v1.1.\
@@ -135,7 +135,7 @@ impl Default for AcmeClient {
         AcmeClient {
             ca_server: LETSENCRYPT_CA_SERVER.to_owned(),
             agreement: LETSENCRYPT_AGREEMENT.to_owned(),
-            bit_length: 2048,
+            bit_length: BIT_LENGTH,
             user_key: None,
             domain: None,
             domain_key: None,
@@ -188,7 +188,7 @@ impl AcmeClient {
     pub fn gen_user_key(mut self) -> Result<Self> {
         debug!("Generating user key");
         if self.user_key.is_none() {
-            self.user_key = Some(try!(gen_key()));
+            self.user_key = Some(try!(gen_key(self.bit_length)));
         }
         Ok(self)
     }
@@ -198,7 +198,7 @@ impl AcmeClient {
     pub fn gen_domain_key(mut self) -> Result<Self> {
         debug!("Generating domain key");
         if self.domain_key.is_none() {
-            self.domain_key = Some(try!(gen_key()));
+            self.domain_key = Some(try!(gen_key(self.bit_length)));
         }
         Ok(self)
     }
@@ -724,8 +724,8 @@ impl Drop for AcmeClient {
 }
 
 
-fn gen_key() -> Result<PKey> {
-    let rsa = try!(RSA::generate(BIT_LENGTH));
+fn gen_key(bit_length: u32) -> Result<PKey> {
+    let rsa = try!(RSA::generate(bit_length));
     let key = try!(PKey::from_rsa(rsa));
     Ok(key)
 }
