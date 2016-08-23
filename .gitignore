@@ -1,5 +1,5 @@
 target
-acme-client/Cargo.lock
+Cargo.lock
 *.csr
 *.key
 *.pub
