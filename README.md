@@ -64,7 +64,7 @@ letsencrypt-rs can also revoke a signed certificate. You need to use your
 user key and a signed certificate to revoke.
 
 ```sh
-letsencrypt-rs revoke --user-key user.key -domain-crt signed.crt
+letsencrypt-rs revoke --user-key user.key --signed-crt signed.crt
 ```
 
 
