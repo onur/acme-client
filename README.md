@@ -3,6 +3,7 @@
 [![Build Status](https://secure.travis-ci.org/onur/letsencrypt-rs.svg?branch=master)](https://travis-ci.org/onur/letsencrypt-rs)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/onur/letsencrypt-rs/master/LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/letsencrypt-rs.svg)](https://crates.io/crates/letsencrypt-rs)
+[![docs.rs.io](https://docs.rs/acme-client/badge.svg)](https://docs.rs/acme-client)
 
 Easy to use Let's Encrypt client and acme client library to issue, renew and
 revoke TLS certificates.
