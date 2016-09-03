@@ -591,6 +591,9 @@ impl AcmeClient {
                         with sigh_certificate() \
                         first"));
 
+            let pem = try!(crt.to_pem());
+            try!(writer.write_all(&pem));
+
             if let Some(url) = self.chain_url.as_ref() {
                 let client = Client::new();
                 let mut res = try!(client.get(url).send());
@@ -598,9 +601,6 @@ impl AcmeClient {
                 try!(res.read_to_string(&mut content));
                 try!(write!(&mut writer, "{}", content));
             }
-
-            let pem = try!(crt.to_pem());
-            try!(writer.write_all(&pem));
         }
 
         Ok(self)
@@ -1067,11 +1067,14 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_example1() {
+    fn test_chain() {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+            .and_then(|ac| ac.load_user_key("tests/user.key"))
             .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
+            .and_then(|ac| ac.set_chain_url("https://letsencrypt.org/certs/\
+                                            lets-encrypt-x3-cross-signed.pem"))
             .and_then(|ac| ac.register_account(Some("onur@onur.im")))
             .and_then(|ac| ac.identify_domain())
             .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
