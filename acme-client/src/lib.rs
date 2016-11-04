@@ -229,36 +229,32 @@ impl AcmeClient {
     }
 
     /// Gets the public key as PEM.
-    pub fn get_user_public_key(self) -> Result<Vec<u8>> {
+    pub fn get_user_public_key(self) -> Option<Vec<u8>> {
         self.user_key
             .as_ref()
-            .ok_or("Key not found".into())
-            .and_then(|k| pem_encode_key(k, true))
+            .and_then(|k| pem_encode_key(k, true).ok())
     }
  
     /// Gets the private key as PEM.
-    pub fn get_user_private_key(self) -> Result<Vec<u8>> {
+    pub fn get_user_private_key(self) -> Option<Vec<u8>> {
         self.user_key
             .as_ref()
-            .ok_or("Key not found".into())
-            .and_then(|k| pem_encode_key(k, false))
+            .and_then(|k| pem_encode_key(k, false).ok())
     }
 
     /// Gets domain public key as PEM.
-    pub fn get_domain_public_key(self) -> Result<Vec<u8>> {
+    pub fn get_domain_public_key(self) -> Option<Vec<u8>> {
         self.domain_key
             .as_ref()
-            .ok_or("Key not found".into())
-            .and_then(|k| pem_encode_key(k, true))
+            .and_then(|k| pem_encode_key(k, true).ok())
     }
 
 
     /// Gets domain private key as PEM.
-    pub fn get_domain_private_key(self) -> Result<Vec<u8>> {
+    pub fn get_domain_private_key(self) -> Option<Vec<u8>> {
         self.domain_key
             .as_ref()
-            .ok_or("Key not found".into())
-            .and_then(|k| pem_encode_key(k, false))
+            .and_then(|k| pem_encode_key(k, false).ok())
     }
 
     /// Saves user public key as PEM.
@@ -897,20 +893,20 @@ mod tests {
     fn test_get_user_private_key() {
         let res = AcmeClient::default()
             .set_domain("example.org")
-            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.gen_user_key()).ok()
             .and_then(|ac| ac.get_user_private_key());
 
-        assert!(res.is_ok());
+        assert!(res.is_some());
     }
 
     #[test]
     fn test_get_user_public_key() {
         let res = AcmeClient::default()
             .set_domain("example.org")
-            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.gen_user_key()).ok()
             .and_then(|ac| ac.get_user_public_key());
 
-        assert!(res.is_ok());
+        assert!(res.is_some());
     }
 
     #[test]
@@ -918,10 +914,10 @@ mod tests {
         let res = AcmeClient::default()
             .set_domain("example.org")
             .and_then(|ac| ac.gen_domain_key())
-            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.gen_domain_key()).ok()
             .and_then(|ac| ac.get_domain_public_key());
 
-        assert!(res.is_ok());
+        assert!(res.is_some());
     }
 
     #[test]
@@ -929,10 +925,10 @@ mod tests {
         let res = AcmeClient::default()
             .set_domain("example.org")
             .and_then(|ac| ac.gen_domain_key())
-            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.gen_domain_key()).ok()
             .and_then(|ac| ac.get_domain_private_key());
 
-        assert!(res.is_ok());
+        assert!(res.is_some());
     }
 
     #[test]
