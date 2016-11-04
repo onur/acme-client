@@ -228,6 +228,38 @@ impl AcmeClient {
         Ok(self)
     }
 
+    /// Gets the public key as PEM.
+    pub fn get_user_public_key(self) -> Result<Vec<u8>> {
+        self.user_key
+            .as_ref()
+            .ok_or("Key not found".into())
+            .and_then(|k| pem_encode_key(k, true))
+    }
+ 
+    /// Gets the private key as PEM.
+    pub fn get_user_private_key(self) -> Result<Vec<u8>> {
+        self.user_key
+            .as_ref()
+            .ok_or("Key not found".into())
+            .and_then(|k| pem_encode_key(k, false))
+    }
+
+    /// Gets domain public key as PEM.
+    pub fn get_domain_public_key(self) -> Result<Vec<u8>> {
+        self.domain_key
+            .as_ref()
+            .ok_or("Key not found".into())
+            .and_then(|k| pem_encode_key(k, true))
+    }
+
+
+    /// Gets domain private key as PEM.
+    pub fn get_domain_private_key(self) -> Result<Vec<u8>> {
+        self.domain_key
+            .as_ref()
+            .ok_or("Key not found".into())
+            .and_then(|k| pem_encode_key(k, false))
+    }
 
     /// Saves user public key as PEM.
     pub fn save_user_public_key<P: AsRef<Path>>(self, path: P) -> Result<Self> {
@@ -740,13 +772,19 @@ fn load_private_key<P: AsRef<Path>>(path: P) -> Result<PKey> {
 }
 
 
-fn save_key<P: AsRef<Path>>(key: &PKey, is_public: bool, path: P) -> Result<()> {
+fn pem_encode_key(key: &PKey, is_public: bool) -> Result<Vec<u8>> {
     let key = try!(key.get_rsa());
     let content = if is_public {
         try!(key.public_key_to_pem())
     } else {
         try!(key.private_key_to_pem())
     };
+    Ok(content)
+}
+
+
+fn save_key<P: AsRef<Path>>(key: &PKey, is_public: bool, path: P) -> Result<()> {
+    let content = try!(pem_encode_key(key, is_public));
     let mut file = try!(File::create(path));
     try!(file.write_all(&content));
     Ok(())
@@ -853,6 +891,48 @@ mod tests {
                 .domain_key
                 .is_some());
         assert!(AcmeClient::default().load_csr("tests/domain.csr").unwrap().domain_csr.is_some());
+    }
+
+    #[test]
+    fn test_get_user_private_key() {
+        let res = AcmeClient::default()
+            .set_domain("example.org")
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.get_user_private_key());
+
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_get_user_public_key() {
+        let res = AcmeClient::default()
+            .set_domain("example.org")
+            .and_then(|ac| ac.gen_user_key())
+            .and_then(|ac| ac.get_user_public_key());
+
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_get_domain_public_key() {
+        let res = AcmeClient::default()
+            .set_domain("example.org")
+            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.get_domain_public_key());
+
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_get_domain_private_key() {
+        let res = AcmeClient::default()
+            .set_domain("example.org")
+            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.gen_domain_key())
+            .and_then(|ac| ac.get_domain_private_key());
+
+        assert!(res.is_ok());
     }
 
     #[test]
