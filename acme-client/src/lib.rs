@@ -229,21 +229,21 @@ impl AcmeClient {
     }
 
     /// Gets the public key as PEM.
-    pub fn get_user_public_key(self) -> Option<Vec<u8>> {
+    pub fn get_user_public_key(&self) -> Option<Vec<u8>> {
         self.user_key
             .as_ref()
             .and_then(|k| pem_encode_key(k, true).ok())
     }
  
     /// Gets the private key as PEM.
-    pub fn get_user_private_key(self) -> Option<Vec<u8>> {
+    pub fn get_user_private_key(&self) -> Option<Vec<u8>> {
         self.user_key
             .as_ref()
             .and_then(|k| pem_encode_key(k, false).ok())
     }
 
     /// Gets domain public key as PEM.
-    pub fn get_domain_public_key(self) -> Option<Vec<u8>> {
+    pub fn get_domain_public_key(&self) -> Option<Vec<u8>> {
         self.domain_key
             .as_ref()
             .and_then(|k| pem_encode_key(k, true).ok())
@@ -251,7 +251,7 @@ impl AcmeClient {
 
 
     /// Gets domain private key as PEM.
-    pub fn get_domain_private_key(self) -> Option<Vec<u8>> {
+    pub fn get_domain_private_key(&self) -> Option<Vec<u8>> {
         self.domain_key
             .as_ref()
             .and_then(|k| pem_encode_key(k, false).ok())
