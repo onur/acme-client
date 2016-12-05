@@ -55,7 +55,7 @@
 //! ```
 //!
 //! Revoking signed certificate:
-//! 
+//!
 //! ```rust,no_run
 //! # use self::acme_client::AcmeClient;
 //! AcmeClient::new()
@@ -112,6 +112,19 @@ mod hyperx {
 }
 
 
+/// A verification challenge
+#[derive(Clone, Debug)]
+pub struct Challenge {
+    /// Type of verification challenge. Usually `http-01`, `dns-01` for letsencrypt.
+    pub ctype: String,
+    /// Challenge verification trigger URL.
+    pub url: String,
+    /// Challenge token.
+    pub token: String,
+    /// Key authorization.
+    pub key_authorization: String,
+}
+
 
 /// Automatic Certificate Management Environment (ACME) client
 pub struct AcmeClient {
@@ -122,8 +135,8 @@ pub struct AcmeClient {
     domain: Option<String>,
     domain_key: Option<PKey>,
     domain_csr: Option<X509Req>,
-    challenges: Option<Json>,
-    http_challenge: Option<(String, String, String)>,
+    challenges_raw: Option<Json>,
+    challenges: Vec<Challenge>,
     signed_cert: Option<X509>,
     chain_url: Option<String>,
     saved_challenge_path: Option<PathBuf>,
@@ -140,8 +153,8 @@ impl Default for AcmeClient {
             domain: None,
             domain_key: None,
             domain_csr: None,
-            challenges: None,
-            http_challenge: None,
+            challenges_raw: None,
+            challenges: Vec::new(),
             signed_cert: None,
             chain_url: None,
             saved_challenge_path: None,
@@ -228,13 +241,19 @@ impl AcmeClient {
         Ok(self)
     }
 
+
+    /// Gets domain name
+    pub fn get_domain(&self) -> Option<String> {
+        self.domain.clone()
+    }
+
     /// Gets the public key as PEM.
     pub fn get_user_public_key(&self) -> Option<Vec<u8>> {
         self.user_key
             .as_ref()
             .and_then(|k| pem_encode_key(k, true).ok())
     }
- 
+
     /// Gets the private key as PEM.
     pub fn get_user_private_key(&self) -> Option<Vec<u8>> {
         self.user_key
@@ -424,33 +443,29 @@ impl AcmeClient {
             return Err(ErrorKind::AcmeServerError(resp).into());
         }
 
-        self.challenges = Some(resp.clone());
+        self.challenges_raw = Some(resp.clone());
 
         for challenge in try!(resp.as_object()
                               .and_then(|obj| obj.get("challenges"))
                               .and_then(|c| c.as_array())
                               .ok_or("No challenge found")) {
 
-            // skip challenges other than http
-            // FIXME: http-01 is Let's Encrypt specific
-            if !challenge.as_object()
-                .and_then(|obj| obj.get("type"))
-                    .and_then(|t| t.as_string())
-                    .and_then(|t| Some(t == "http-01"))
-                    .unwrap_or(false) {
-                        continue;
-                    }
+            let ctype = try!(challenge.as_object()
+                           .and_then(|obj| obj.get("type"))
+                           .and_then(|t| t.as_string())
+                           .ok_or("Challenge type not found"))
+                .to_owned();
 
             let uri = try!(challenge.as_object()
                            .and_then(|obj| obj.get("uri"))
                            .and_then(|t| t.as_string())
-                           .ok_or("URI not found in http challange"))
+                           .ok_or("URI not found"))
                 .to_owned();
 
             let token = try!(challenge.as_object()
                              .and_then(|obj| obj.get("token"))
                              .and_then(|t| t.as_string())
-                             .ok_or("Token not found in http challange"))
+                             .ok_or("Token not found"))
                 .to_owned();
 
 
@@ -459,36 +474,46 @@ impl AcmeClient {
                         token,
                         b64(try!(hash(Type::SHA256, &try!(encode(&try!(self.jwk()))).into_bytes()))));
 
-            self.http_challenge = Some((uri, token, key_authorization));
+            self.challenges.push(Challenge {
+                ctype: ctype,
+                url: uri,
+                token: token,
+                key_authorization: key_authorization,
+            });
         }
 
         Ok(self)
     }
 
 
-    /// Returns `(uri, token, key_authorization)` from HTTP challenge.
+    /// Gets a challenge.
     ///
-    /// Get challenges first with `identify_domain()`.
-    pub fn get_http_challenge(&self) -> Result<(String, String, String)> {
-        let (uri, token, key_authorization) =
-            try!(self.http_challenge.clone().ok_or("HTTP challenge not found"));
-        Ok((uri, token, key_authorization))
+    /// You need to get challenges first with `identify_domain()`.
+    ///
+    /// Pattern is used in `starts_with` for type comparison.
+    pub fn get_challenge(&self, pattern: &str) -> Option<Challenge> {
+        for challenge in &self.challenges {
+            if challenge.ctype.starts_with(pattern) {
+                return Some(challenge.clone());
+            }
+        }
+        None
     }
 
 
     /// Saves validation token into `{path}/.well-known/acme-challenge/{token}`.
     pub fn save_http_challenge_into<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
-        let (_, token, key_authorization) = try!(self.get_http_challenge());
+        let challenge = try!(self.get_challenge("http").ok_or("HTTP challenge not found"));
 
         use std::fs::create_dir_all;
         let path = path.as_ref().join(".well-known").join("acme-challenge");
         debug!("Saving validation token into: {:?}", &path);
         try!(create_dir_all(&path));
 
-        let mut file = try!(File::create(path.join(&token)));
-        try!(writeln!(&mut file, "{}", key_authorization));
+        let mut file = try!(File::create(path.join(&challenge.token)));
+        try!(writeln!(&mut file, "{}", challenge.key_authorization));
 
-        self.saved_challenge_path = Some(path.join(&token).to_path_buf());
+        self.saved_challenge_path = Some(path.join(&challenge.token).to_path_buf());
 
         Ok(self)
     }
@@ -496,19 +521,37 @@ impl AcmeClient {
 
     /// Triggers HTTP validation to verify domain ownership.
     pub fn simple_http_validation(self) -> Result<Self> {
-        info!("Triggering simple HTTP validation");
-        let (uri, _, key_authorization) = try!(self.get_http_challenge());
+        let challenge = try!(self.get_challenge("http").ok_or("HTTP challenge not found"));
+        self.trigger_validation(challenge)
+    }
 
-        let map = {
-            let mut map: BTreeMap<String, Json> = BTreeMap::new();
-            map.insert("resource".to_owned(), "challenge".to_json());
-            map.insert("keyAuthorization".to_owned(), key_authorization.to_json());
-            map
+
+    /// Triggers DNS validation to verify domain ownership.
+    pub fn dns_validation(self) -> Result<Self> {
+        let challenge = try!(self.get_challenge("dns").ok_or("DNS challenge not found"));
+        self.trigger_validation(challenge)
+    }
+
+
+    /// Triggers validation for challenge
+    fn trigger_validation(self, challenge: Challenge) -> Result<Self> {
+        info!("Triggering {} validation", challenge.ctype);
+
+        let payload = {
+            let map = {
+                let mut map: BTreeMap<String, Json> = BTreeMap::new();
+                map.insert("type".to_owned(), challenge.ctype.to_json());
+                map.insert("token".to_owned(), challenge.token.to_json());
+                map.insert("resource".to_owned(), "challenge".to_json());
+                map.insert("keyAuthorization".to_owned(), challenge.key_authorization.to_json());
+                map
+            };
+            try!(self.jws(map))
         };
 
         let client = Client::new();
-        let mut resp = try!(client.post(&uri)
-                            .body(&try!(self.jws(map)))
+        let mut resp = try!(client.post(&challenge.url)
+                            .body(&payload)
                             .send());
 
         let mut res_json: Json = {
@@ -530,7 +573,7 @@ impl AcmeClient {
 
             if status == "pending" {
                 debug!("Status is pending, trying again...");
-                let mut resp = try!(client.get(&uri).send());
+                let mut resp = try!(client.get(&challenge.url).send());
                 res_json = {
                     let mut res_content = String::new();
                     try!(resp.read_to_string(&mut res_content));
@@ -546,6 +589,17 @@ impl AcmeClient {
             use std::time::Duration;
             sleep(Duration::from_secs(2));
         }
+
+    }
+
+
+    /// Gets DNS validation signature.
+    ///
+    /// This value is used for verification domain over DNS. Signature must be saved
+    /// as a TXT record for `_acme_challenge.example.com`.
+    pub fn get_dns_validation_signature(&mut self) -> Result<String> {
+        let challenge = try!(self.get_challenge("dns").ok_or("Challenge not found"));
+        Ok(b64(try!(hash(Type::SHA256, &challenge.key_authorization.into_bytes()))))
     }
 
 
@@ -1008,7 +1062,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_http_challenge() {
+    fn test_get_challenge() {
         let _ = env_logger::init();
         let ac = AcmeClient::default()
             .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
@@ -1016,13 +1070,19 @@ mod tests {
             .and_then(|ac| ac.set_domain("example.org"))
             .and_then(|ac| ac.register_account(None))
             .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.get_http_challenge());
-        assert!(ac.is_ok());
+            .unwrap();
 
-        let (uri, token, key_authorization) = ac.unwrap();
-        assert!(!uri.is_empty());
-        assert!(!token.is_empty());
-        assert!(!key_authorization.is_empty());
+        for pattern in ["http", "dns"].iter() {
+            let challenge = ac.get_challenge(pattern);
+            assert!(challenge.is_some());
+
+            let challenge = challenge.unwrap();
+
+            assert!(!challenge.ctype.is_empty());
+            assert!(!challenge.url.is_empty());
+            assert!(!challenge.token.is_empty());
+            assert!(!challenge.key_authorization.is_empty());
+        }
     }
 
 
@@ -1040,6 +1100,22 @@ mod tests {
         use std::fs::remove_dir_all;
         remove_dir_all("test").unwrap();
     }
+
+
+    #[test]
+    fn test_get_dns_validation_signature() {
+        let _ = env_logger::init();
+        let ac = AcmeClient::default()
+                .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
+                .and_then(|ac| ac.gen_user_key())
+                .and_then(|ac| ac.set_domain("example.org"))
+                .and_then(|ac| ac.register_account(None))
+                .and_then(|ac| ac.identify_domain())
+                .and_then(|mut ac| ac.get_dns_validation_signature());
+        assert!(ac.is_ok());
+        assert!(!ac.unwrap().is_empty())
+    }
+
 
     #[ignore]
     #[test]

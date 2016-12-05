@@ -59,6 +59,20 @@ This will not generate any key and it will use provided keys to sign
 the certificate.
 
 
+### Using DNS validation
+
+You can use `--dns` flag to trigger DNS validation instead of HTTP. This
+option requires user to generate a TXT record for domain. An example DNS
+validation:
+
+```sh
+$ letsencrypt-rs sign --dns -D onur.im -E onur@onur.im \
+    -k /tmp/onur.im.key -o /tmp/onur.im.crt
+Please create a TXT record for _acme-challenge.onur.im: fDdTmWl4RMuGqj9acJiTC13hF6dVOZUNm3FujCIz3jc
+Press enter to continue
+```
+
+
 ### Revoking a signed certificate
 
 letsencrypt-rs can also revoke a signed certificate. You need to use your
@@ -80,28 +94,38 @@ letsencrypt-rs-sign
 Signs a certificate
 
 USAGE:
-    letsencrypt-rs sign [FLAGS] [OPTIONS] --domain <DOMAIN> --public-dir <PUBLIC_DIR>
+    letsencrypt-rs sign [FLAGS] [OPTIONS] --domain <DOMAIN>
 
 FLAGS:
-    -c, --chain      Chains the signed certificate with Let's Encrypt Authority X3 (IdenTrust
-                     cross-signed) intermediate certificate.
+    -c, --chain      Chains the signed certificate with Let's Encrypt Authority
+                     X3 (IdenTrust cross-signed) intermediate certificate.
+    -d, --dns        Use DNS challenge instead of HTTP. This option requires
+                     user to generate a TXT record for domain
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -B, --bit-length <BIT_LENGHT>               Bit length for CSR. Default is 2048.
-    -D, --domain <DOMAIN>                       Name of domain for identification.
-    -C, --domain-csr <DOMAIN_CSR>               Path to domain certificate signing request.
-    -K  --domain-key <DOMAIN_KEY_PATH>          Domain private key path to use it in CSR
-                                                generation.
-    -E, --email <EMAIL>                         Contact email address (optional).
-    -P, --public-dir <PUBLIC_DIR>               Directory to save ACME simple http challenge.
-    -S, --save-csr <SAVE_DOMAIN_CSR>            Path to save domain certificate signing request.
+    -B, --bit-length <BIT_LENGHT>
+            Bit length for CSR. Default is 2048.
+    -D, --domain <DOMAIN>
+            Name of domain for identification. This option is required.
+    -C, --domain-csr <DOMAIN_CSR>
+            Path to domain certificate signing request.
+    -K, --domain-key <DOMAIN_KEY_PATH>
+            Domain private key path to use it in CSR generation.
+    -E, --email <EMAIL>
+            Contact email address (optional).
+    -P, --public-dir <PUBLIC_DIR>
+            Directory to save ACME simple http challenge. This option is
+            required.
+    -S, --save-csr <SAVE_DOMAIN_CSR>
+            Path to save domain certificate signing request.
     -k, --save-domain-key <SAVE_DOMAIN_KEY>     Path to save domain private key.
-    -o, --save-crt <SAVE_SIGNED_CERTIFICATE>    Path to save signed certificate. Default is STDOUT.
-    -u  --save-user-key <SAVE_USER_KEY>         Path to save private user key.
-    -U, --user-key <USER_KEY_PATH>              User private key path to use it in account
-                                                registration.
+    -o, --save-crt <SAVE_SIGNED_CERTIFICATE>
+            Path to save signed certificate. Default is STDOUT.
+    -u, --save-user-key <SAVE_USER_KEY>         Path to save private user key.
+    -U, --user-key <USER_KEY_PATH>
+            User private key path to use it in account registration.
 ```
 
 ```
