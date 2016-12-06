@@ -39,7 +39,6 @@ fn main() {
                 .help("Directory to save ACME simple http challenge. This option is required.")
                 .short("P")
                 .long("public-dir")
-                .required(true)
                 .takes_value(true))
             .arg(Arg::with_name("EMAIL")
                 .help("Contact email address (optional).")
@@ -81,7 +80,13 @@ fn main() {
                        (IdenTrust cross-signed) intermediate certificate.")
                 .short("c")
                 .long("chain")
-                .takes_value(false)))
+                .takes_value(false))
+            .arg(Arg::with_name("DNS_CHALLENGE")
+                 .help("Use DNS challenge instead of HTTP. This option requires user \
+                        to generate a TXT record for domain")
+                 .short("d")
+                 .long("dns")
+                 .takes_value(false)))
         .subcommand(SubCommand::with_name("revoke")
             .about("Revokes a signed certificate")
             .display_order(2)
@@ -101,7 +106,6 @@ fn main() {
 
 
     let mut ac = AcmeClient::new().expect("Failed to create new AcmeClient");
-
 
     // sign certificate
     if let Some(matches) = matches.subcommand_matches("sign") {
@@ -139,10 +143,28 @@ fn main() {
 
         ac = ac.register_account(matches.value_of("EMAIL"))
             .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into(matches.value_of("PUBLIC_DIR").unwrap()))
-            .and_then(|ac| ac.simple_http_validation())  // unwrap is fine here ~~~~^
-            .and_then(|ac| ac.sign_certificate())        // PUBLIC_DIR is always required
-            .expect("Failed to sign certificate");
+            .expect("Failed to identify domain");
+
+        // Use HTTP challenge if user is not requested DNS challenge
+        if !matches.is_present("DNS_CHALLENGE") {
+            ac = ac.save_http_challenge_into(matches.value_of("PUBLIC_DIR")
+                                             .expect("--public-dir not defined. You need to \
+                                                     define a public directory to use http \
+                                                     challenge verification"))
+                .and_then(|ac| ac.simple_http_validation())
+                .and_then(|ac| ac.sign_certificate())
+                .expect("Failed to sign certificate");
+        } else {
+            // print challenge
+            print!("Please create a TXT record for _acme-challenge.{}: {}\n\
+                    Press enter to continue",
+                   ac.get_domain().unwrap(),
+                   ac.get_dns_validation_signature().unwrap());
+            ::std::io::stdin().read_line(&mut String::new()).unwrap();
+            ac = ac.dns_validation()
+                .and_then(|ac| ac.sign_certificate())
+                .expect("Failed to sign certificate");
+        }
 
         if let Some(path) = matches.value_of("SAVE_SIGNED_CERTIFICATE") {
             ac = ac.save_signed_certificate(path).expect("Failed to save signed certificate");

@@ -1,7 +1,7 @@
 [package]
 name = "letsencrypt-rs"
 description = "Easy to use Let's Encrypt client to issue, renew and revoke TLS certificates"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Onur Aslan <onur@onur.im>"]
 license = "MIT"
 keywords = ["letsencrypt", "acme"]
@@ -9,6 +9,6 @@ readme = "README.md"
 repository = "https://github.com/onur/letsencrypt-rs"
 
 [dependencies]
-acme-client = { version = "0.1.2", path = "acme-client" }
+acme-client = { version = "0.2.0", path = "acme-client" }
 clap = "^2.10.0"
 env_logger = "^0.3"
