@@ -1,7 +1,7 @@
 [package]
 name = "acme-client"
 description = "Easy to use ACME client library to issue, renew and revoke TLS certificates"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Onur Aslan <onur@onur.im>"]
 license = "MIT"
 keywords = ["letsencrypt", "acme"]
@@ -10,11 +10,12 @@ documentation = "https://docs.rs/acme-client"
 repository = "https://github.com/onur/letsencrypt-rs"
 
 [dependencies]
-error-chain = "^0.4.2"
-log = "^0.3.6"
-rustc-serialize = "^0.3.19"
-hyper = "^0.9.10"
-openssl = { version = "^0.8.1", features = [ "x509_generator_request" ] }
+error-chain = "0.9"
+log = "0.3"
+rustc-serialize = "0.3"
+hyper = "0.10"
+reqwest = "0.4"
+openssl = "0.9"
 
 [dev-dependencies]
-env_logger = "^0.3"
+env_logger = "0.3"

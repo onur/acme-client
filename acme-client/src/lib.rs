@@ -71,6 +71,7 @@ extern crate log;
 extern crate error_chain;
 #[macro_use]
 extern crate hyper;
+extern crate reqwest;
 extern crate openssl;
 extern crate rustc_serialize;
 
@@ -81,14 +82,15 @@ use std::io;
 use std::io::{Read, Write};
 use std::collections::BTreeMap;
 
-use openssl::crypto::rsa::RSA;
-use openssl::crypto::pkey::PKey;
-use openssl::crypto::hash::{hash, Type};
+use openssl::rsa::Rsa;
+use openssl::pkey::PKey;
+use openssl::hash::{hash, MessageDigest};
+use openssl::sign::Signer;
 use openssl::x509::{X509, X509Req, X509Generator};
 use openssl::x509::extension::{Extension, KeyUsageOption};
 
-use hyper::Client;
-use hyper::status::StatusCode;
+use reqwest::Client;
+use reqwest::StatusCode;
 
 use rustc_serialize::base64;
 use rustc_serialize::base64::ToBase64;
@@ -338,7 +340,7 @@ impl AcmeClient {
         let generator = X509Generator::new()
             .set_valid_period(365)
             .add_name("CN".to_owned(), domain)
-            .set_sign_hash(Type::SHA256)
+            .set_sign_hash(MessageDigest::sha256())
             .add_extension(Extension::KeyUsage(vec![KeyUsageOption::DigitalSignature]));
 
         {
@@ -472,7 +474,7 @@ impl AcmeClient {
             let key_authorization =
                 format!("{}.{}",
                         token,
-                        b64(try!(hash(Type::SHA256, &try!(encode(&try!(self.jwk()))).into_bytes()))));
+                        b64(try!(hash(MessageDigest::sha256(), &try!(encode(&try!(self.jwk()))).into_bytes()))));
 
             self.challenges.push(Challenge {
                 ctype: ctype,
@@ -549,9 +551,9 @@ impl AcmeClient {
             try!(self.jws(map))
         };
 
-        let client = Client::new();
+        let client = try!(Client::new());
         let mut resp = try!(client.post(&challenge.url)
-                            .body(&payload)
+                            .body(&payload[..])
                             .send());
 
         let mut res_json: Json = {
@@ -560,7 +562,7 @@ impl AcmeClient {
             try!(Json::from_str(&res_content))
         };
 
-        if resp.status != StatusCode::Accepted {
+        if resp.status() != &StatusCode::Accepted {
             return Err(ErrorKind::AcmeServerError(res_json).into());
         }
 
@@ -599,7 +601,7 @@ impl AcmeClient {
     /// as a TXT record for `_acme_challenge.example.com`.
     pub fn get_dns_validation_signature(&mut self) -> Result<String> {
         let challenge = try!(self.get_challenge("dns").ok_or("Challenge not found"));
-        Ok(b64(try!(hash(Type::SHA256, &challenge.key_authorization.into_bytes()))))
+        Ok(b64(try!(hash(MessageDigest::sha256(), &challenge.key_authorization.into_bytes()))))
     }
 
 
@@ -619,13 +621,13 @@ impl AcmeClient {
             map.insert("resource".to_owned(), "new-cert".to_owned());
             map.insert("csr".to_owned(), b64(try!(csr.to_der())));
 
-            let client = Client::new();
+            let client = try!(Client::new());
             let jws = try!(self.jws(map));
             let mut res = try!(client.post(&format!("{}/acme/new-cert", self.ca_server))
-                               .body(&jws)
+                               .body(&jws[..])
                                .send());
 
-            if res.status != StatusCode::Created {
+            if res.status() != &StatusCode::Created {
                 let res_json = {
                     let mut res_content = String::new();
                     try!(res.read_to_string(&mut res_content));
@@ -677,7 +679,7 @@ impl AcmeClient {
             try!(writer.write_all(&pem));
 
             if let Some(url) = self.chain_url.as_ref() {
-                let client = Client::new();
+                let client = try!(Client::new());
                 let mut res = try!(client.get(url).send());
                 let mut content = String::new();
                 try!(res.read_to_string(&mut content));
@@ -721,9 +723,9 @@ impl AcmeClient {
         let mut json = payload.to_json();
         json.as_object_mut().and_then(|obj| obj.insert("resource".to_owned(), resource.to_json()));
         let jws = try!(self.jws(json));
-        let client = Client::new();
+        let client = try!(Client::new());
         let mut res = try!(client.post(&format!("{}/acme/{}", self.ca_server, resource))
-                           .body(&jws)
+                           .body(&jws[..])
                            .send());
 
         let res_json = {
@@ -736,13 +738,13 @@ impl AcmeClient {
             }
         };
 
-        Ok((res.status, res_json))
+        Ok((*res.status(), res_json))
     }
 
 
     /// Makes a Flattened JSON Web Signature from payload
     fn jws<T: ToJson>(&self, payload: T) -> Result<String> {
-        let rsa = try!(try!(self.user_key.as_ref().ok_or("Key not found")).get_rsa());
+        let pkey = try!(self.user_key.as_ref().ok_or("Key not found"));
         let nonce = try!(self.get_nonce());
         let mut data: BTreeMap<String, Json> = BTreeMap::new();
 
@@ -763,9 +765,9 @@ impl AcmeClient {
 
         // signature: b64 of hash of signature of {proctected64}.{payload64}
         data.insert("signature".to_owned(), {
-            let hash = try!(hash(Type::SHA256,
-                                 &format!("{}.{}", protected64, payload64).into_bytes()));
-            b64(try!(rsa.sign(Type::SHA256, &hash))).to_json()
+            let mut signer = try!(Signer::new(MessageDigest::sha256(), &pkey));
+            try!(signer.update(&format!("{}.{}", protected64, payload64).into_bytes()));
+            b64(try!(signer.finish())).to_json()
         });
 
         let json_str = try!(encode(&data));
@@ -776,7 +778,7 @@ impl AcmeClient {
 
     /// Returns jwk field of jws header
     fn jwk(&self) -> Result<Json> {
-        let rsa = try!(try!(self.user_key.as_ref().ok_or("Key not found")).get_rsa());
+        let rsa = try!(try!(self.user_key.as_ref().ok_or("Key not found")).rsa());
         let mut jwk: BTreeMap<String, String> = BTreeMap::new();
         jwk.insert("e".to_owned(), b64(try!(rsa.e().ok_or("e not found in RSA key")).to_vec()));
         jwk.insert("kty".to_owned(), "RSA".to_owned());
@@ -786,9 +788,9 @@ impl AcmeClient {
 
 
     fn get_nonce(&self) -> Result<String> {
-        let client = Client::new();
+        let client = try!(Client::new());
         let res = try!(client.get(&format!("{}/directory", self.ca_server)).send());
-        res.headers
+        res.headers()
             .get::<hyperx::ReplayNonce>()
             .ok_or("Replay-Nonce header not found".into())
             .and_then(|nonce| Ok(nonce.as_str().to_string()))
@@ -807,7 +809,7 @@ impl Drop for AcmeClient {
 
 
 fn gen_key(bit_length: u32) -> Result<PKey> {
-    let rsa = try!(RSA::generate(bit_length));
+    let rsa = try!(Rsa::generate(bit_length));
     let key = try!(PKey::from_rsa(rsa));
     Ok(key)
 }
@@ -823,7 +825,7 @@ fn load_private_key<P: AsRef<Path>>(path: P) -> Result<PKey> {
 
 
 fn pem_encode_key(key: &PKey, is_public: bool) -> Result<Vec<u8>> {
-    let key = try!(key.get_rsa());
+    let key = try!(key.rsa());
     let content = if is_public {
         try!(key.public_key_to_pem())
     } else {
@@ -862,11 +864,12 @@ error_chain! {
     }
 
     foreign_links {
-        openssl::error::ErrorStack, OpenSslErrorStack;
-        io::Error, IoError;
-        hyper::Error, HyperError;
-        rustc_serialize::json::EncoderError, JsonEncoderError;
-        rustc_serialize::json::ParserError, JsonParserError;
+        OpenSslErrorStack(openssl::error::ErrorStack);
+        IoError(io::Error);
+        HyperError(hyper::Error);
+        ReqwestError(reqwest::Error);
+        JsonEncoderError(rustc_serialize::json::EncoderError);
+        JsonParserError(rustc_serialize::json::ParserError);
     }
 
     errors {
