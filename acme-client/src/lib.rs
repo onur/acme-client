@@ -1,70 +1,235 @@
-//! Easy to use Let's Encrypt compatible Automatic Certificate Management Environment (ACME)
-//! client library.
+//! Easy to use [Let's Encrypt](https://letsencrypt.org/) compatible
+//! Automatic Certificate Management Environment (ACME) client.
 //!
-//! Spec is available in <https://tools.ietf.org/html/draft-ietf-acme-acme>
+//! ## API overview
 //!
-//! ## Examples
-//!
-//! Signing certificate for example.org:
-//!
-//! ```rust,no_run
-//! # use self::acme_client::AcmeClient;
-//! AcmeClient::new()
-//!     .and_then(|ac| ac.set_domain("example.org"))
-//!     .and_then(|ac| ac.register_account(Some("contact@example.org")))
-//!     .and_then(|ac| ac.identify_domain())
-//!     .and_then(|ac| ac.save_http_challenge_into("/var/www"))
-//!     .and_then(|ac| ac.simple_http_validation())
-//!     .and_then(|ac| ac.sign_certificate())
-//!     .and_then(|ac| ac.save_domain_private_key("domain.key"))
-//!     .and_then(|ac| ac.save_signed_certificate("domain.crt"));
-//! ```
-//!
-//! Using your own keys and CSR to sign certificate:
+//! To successfully sign a SSL certificate for a domain name, you need to identify ownership of
+//! your domain. You can also identify and sign certificate for multiple domain names and
+//! explicitly use your own private keys and certificate signing request (CSR),
+//! otherwise this library will generate them. Basic usage of `acme-client`:
 //!
 //! ```rust,no_run
-//! # use self::acme_client::AcmeClient;
-//! AcmeClient::new()
-//!     .and_then(|ac| ac.set_domain("example.org"))
-//!     .and_then(|ac| ac.load_user_key("user.key"))
-//!     .and_then(|ac| ac.load_domain_key("domain.key"))
-//!     .and_then(|ac| ac.load_csr("domain.csr"))
-//!     .and_then(|ac| ac.register_account(Some("contact@example.org")))
-//!     .and_then(|ac| ac.identify_domain())
-//!     .and_then(|ac| ac.save_http_challenge_into("/var/www"))
-//!     .and_then(|ac| ac.simple_http_validation())
-//!     .and_then(|ac| ac.sign_certificate())
-//!     .and_then(|ac| ac.save_domain_private_key("domain.key"))
-//!     .and_then(|ac| ac.save_signed_certificate("domain.crt"));
+//! use acme_client::Directory;
+//!
+//! let directory = Directory::lets_encrypt().unwrap();
+//! let account = directory.account_registration().register().unwrap();
+//!
+//! // Create a identifier authorization for example.com
+//! let authorization = account.authorization("example.com").unwrap();
+//!
+//! // Validate ownership of example.com with http challenge
+//! let http_challenge = authorization.get_http_challenge().unwrap();
+//! http_challenge.save_key_authorization("/var/www").unwrap();
+//! http_challenge.validate().unwrap();
+//!
+//! let cert = account.certificate_signer(&["example.com"]).sign_certificate().unwrap();
+//! cert.save_signed_certificate("certificate.pem").unwrap();
+//! cert.save_private_key("certificate.key").unwrap();
 //! ```
 //!
-//! Or you can use this library to generate keys and CSR, and use it later:
-//!
-//! ```rust
-//! # use self::acme_client::AcmeClient;
-//! AcmeClient::new()
-//!     .and_then(|ac| ac.set_domain("example.org"))
-//!     .and_then(|ac| ac.gen_user_key())
-//!     .and_then(|ac| ac.gen_domain_key())
-//!     .and_then(|ac| ac.gen_csr())
-//!     .and_then(|ac| ac.save_user_public_key("user.pub"))
-//!     .and_then(|ac| ac.save_user_private_key("user.pub"))
-//!     .and_then(|ac| ac.save_domain_public_key("domain.pub"))
-//!     .and_then(|ac| ac.save_domain_private_key("domain.key"))
-//!     .and_then(|ac| ac.save_csr("domain.csr"));
-//! ```
-//!
-//! Revoking signed certificate:
+//! `acme-client` supports signing a certificate for multiple domain names with SAN. You need to
+//! validate ownership of each domain name:
 //!
 //! ```rust,no_run
-//! # use self::acme_client::AcmeClient;
-//! AcmeClient::new()
-//!     .and_then(|ac| ac.load_user_key("tests/user.key"))
-//!     .and_then(|ac| ac.load_certificate("domain.crt"))
-//!     .and_then(|ac| ac.revoke_signed_certificate());
+//! use acme_client::Directory;
+//!
+//! let directory = Directory::lets_encrypt().unwrap();
+//! let account = directory.account_registration().register().unwrap();
+//!
+//! let domains = ["example.com", "example.org"];
+//!
+//! for domain in domains.iter() {
+//!     let authorization = account.authorization(domain).unwrap();
+//!     // ...
+//! }
+//!
+//! let cert = account.certificate_signer(&domains).sign_certificate().unwrap();
+//! cert.save_signed_certificate("certificate.pem").unwrap();
+//! cert.save_private_key("certificate.key").unwrap();
 //! ```
+//!
+//! ## Account registration
+//!
+//! ```rust,no_run
+//! use acme_client::Directory;
+//!
+//! let directory = Directory::lets_encrypt().unwrap();
+//! # // Use staging directory for doc test
+//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
+//! #   .unwrap();
+//! let account = directory.account_registration()
+//!                        .email("example@example.org")
+//!                        .register()
+//!                        .unwrap();
+//! ```
+//!
+//! Contact email address is optional. You can also use your own private key during
+//! registration. See [AccountRegistration](struct.AccountRegistration.html) helper for more
+//! details.
+//!
+//! If you already registed with your own keys before, you still need to use `register` method,
+//! in this case it will identify your user account instead of creating a new one.
+//!
+//!
+//! ## Identifying ownership of domain name
+//!
+//! Before sending a certificate signing request to an ACME server, you need to identify ownership
+//! of domain names in order to to sign a certificate. To do that you need to create an
+//! Authorization object for a domain name and fulfill at least one challenge (http or dns for
+//! Let's Encrypt).
+//!
+//! To create an Authorization object for a domain:
+//!
+//! ```rust,no_run
+//! # use acme_client::Directory;
+//! # let directory = Directory::lets_encrypt().unwrap();
+//! # // Use staging directory for doc test
+//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
+//! #   .unwrap();
+//! # let account = directory.account_registration().register().unwrap();
+//! let authorization = account.authorization("example.com").unwrap();
+//! ```
+//!
+//! Authorization object will contain challenges created by ACME server. You can create as many
+//! Authorization object as you want to verifiy ownership of the domain names. For example
+//! if you want to sign a certificate for `example.com` and `example.org`:
+//!
+//! ```rust,no_run
+//! # use acme_client::Directory;
+//! # let directory = Directory::lets_encrypt().unwrap();
+//! # // Use staging directory for doc test
+//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
+//! #   .unwrap();
+//! # let account = directory.account_registration().register().unwrap();
+//! let domains = ["example.com", "example.org"];
+//! for domain in domains.iter() {
+//!     let authorization = account.authorization(domain).unwrap();
+//!     // ...
+//! }
+//! ```
+//!
+//! ### Identifier validation challenges
+//!
+//! When you send authorization request to an ACME server, it will generate
+//! identifier validation challenges to provide assurence that an account holder is also
+//! the entity that controls an identifier.
+//!
+//! #### HTTP challenge
+//!
+//! With HTTP validation, the client in an ACME transaction proves its
+//! control over a domain name by proving that it can provision resources
+//! on an HTTP server that responds for that domain name.
+//!
+//! `acme-client` has
+//! [`save_key_authorization`](struct.Challenge.html#method.save_key_authorization) method
+//! to save vaditation file to a public directory. This directory must be accessible to outside
+//! world.
+//!
+//! ```rust,no_run
+//! # use acme_client::Directory;
+//! # let directory = Directory::lets_encrypt().unwrap();
+//! # // Use staging directory for doc test
+//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
+//! #   .unwrap();
+//! # let account = directory.account_registration()
+//! #                        .pkey_from_file("tests/user.key").unwrap() // use test key for doc test
+//! #                        .register()
+//! #                        .unwrap();
+//! let authorization = account.authorization("example.com").unwrap();
+//! let http_challenge = authorization.get_http_challenge().unwrap();
+//!
+//! // This method will save key authorization into
+//! // /var/www/.well-known/acme-challenge/ directory.
+//! http_challenge.save_key_authorization("/var/www").unwrap();
+//!
+//! // Validate ownership of example.com with http challenge
+//! http_challenge.validate().unwrap();
+//! ```
+//!
+//! During validation, ACME server will check
+//! `http://example.com/.well-known/acme-challenge/{token}` to identify ownership of domain name.
+//! You need to make sure token is publicly accessible.
+//!
+//! #### DNS challenge:
+//!
+//! The DNS challenge requires the client to provision a TXT record containing a designated
+//! value under a specific validation domain name.
+//!
+//! `acme-client` can generated this value with
+//! [`signature`](struct.Challenge.html#method.signature) method.
+//!
+//! The user constructs the validation domain name by prepending the label "_acme-challenge"
+//! to the domain name being validated, then provisions a TXT record with the digest value under
+//! that name. For example, if the domain name being validated is "example.com", then the client
+//! would provision the following DNS record:
+//!
+//! ```text
+//! _acme-challenge.example.com: dns_challenge.signature()
+//! ```
+//!
+//! Example validation with DNS challenge:
+//!
+//! ```rust,no_run
+//! # use acme_client::Directory;
+//! # let directory = Directory::lets_encrypt().unwrap();
+//! # // Use staging directory for doc test
+//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
+//! #   .unwrap();
+//! # let account = directory.account_registration()
+//! #                        .pkey_from_file("tests/user.key").unwrap() // use test key for doc test
+//! #                        .register()
+//! #                        .unwrap();
+//! let authorization = account.authorization("example.com").unwrap();
+//! let dns_challenge = authorization.get_dns_challenge().unwrap();
+//! let signature = dns_challenge.signature().unwrap();
+//!
+//! // User creates a TXT record for _acme-challenge.example.com with the value of signature.
+//!
+//! // Validate ownership of example.com with DNS challenge
+//! dns_challenge.validate().unwrap();
+//! ```
+//!
+//! ## Signing a certificate
+//!
+//! After validating all the domain names you can send a sign certificate request. `acme-client`
+//! provides [`CertificateSigner`](struct.CertificateSigner.html) helper for this. You can
+//! use your own key and CSR or you can let `CertificateSigner` to generate them for you.
+//!
+//! ```rust,no_run
+//! # use acme_client::Directory;
+//! # let directory = Directory::lets_encrypt().unwrap();
+//! # let account = directory.account_registration().register().unwrap();
+//! let domains = ["example.com", "example.org"];
+//!
+//! // ... validate ownership of domain names
+//!
+//! let certificate_signer = account.certificate_signer(&domains);
+//! let cert = certificate_signer.sign_certificate().unwrap();
+//! cert.save_signed_certificate("certificate.pem").unwrap();
+//! cert.save_private_key("certificate.key").unwrap();
+//! ```
+//! 
+//! ## Revoking a signed certificate
+//! 
+//! You can use `revoke_certificate` or `revoke_signed_certificate` methods to revoke a signed
+//! certificate. You need to register with the same private key you registered before to
+//! successfully revoke a signed certificate. You can also use private key used to generate CSR.
+//! 
+//! ```rust,no_run
+//! # use acme_client::Directory;
+//! # let directory = Directory::lets_encrypt().unwrap();
+//! let account = directory.account_registration()
+//!                        .pkey_from_file("user.key").unwrap()
+//!                        .register().unwrap();
+//! account.revoke_certificate_from_file("certificate.pem").unwrap();
+//! ```
+//!
+//! ## References
+//!
+//! * [IETF ACME draft](https://tools.ietf.org/html/draft-ietf-acme-acme-05)
+//! * [Let's Encrypt ACME divergences](https://github.com/letsencrypt/boulder/blob/master/docs/acme-divergences.md)
 
-
+pub extern crate openssl;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -72,38 +237,731 @@ extern crate error_chain;
 #[macro_use]
 extern crate hyper;
 extern crate reqwest;
-extern crate openssl;
 extern crate rustc_serialize;
 
 
+use std::path::Path;
 use std::fs::File;
-use std::path::{Path, PathBuf};
-use std::io;
 use std::io::{Read, Write};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use openssl::rsa::Rsa;
-use openssl::pkey::PKey;
-use openssl::hash::{hash, MessageDigest};
 use openssl::sign::Signer;
-use openssl::x509::{X509, X509Req, X509Generator};
-use openssl::x509::extension::{Extension, KeyUsageOption};
+use openssl::hash::{hash, MessageDigest};
+use openssl::pkey::PKey;
+use openssl::rsa::Rsa;
+use openssl::x509::{X509, X509Req, X509Name};
+use openssl::x509::extension::SubjectAlternativeName;
+use openssl::stack::Stack;
 
-use reqwest::Client;
-use reqwest::StatusCode;
+use reqwest::{Client, StatusCode};
 
-use rustc_serialize::base64;
-use rustc_serialize::base64::ToBase64;
 use rustc_serialize::json::{Json, ToJson, encode};
+use rustc_serialize::base64::{self, ToBase64};
+
+use error::{Result, ErrorKind};
 
 
+/// Default Let's Encrypt directory URL to configure client.
+pub const LETSENCRYPT_DIRECTORY_URL: &'static str = "https://acme-v01.api.letsencrypt.org\
+                                                     /directory";
+/// Default Let's Encrypt agreement URL used in account registration.
+pub const LETSENCRYPT_AGREEMENT_URL: &'static str = "https://letsencrypt.org/documents/LE-SA-v1.1.\
+                                                     1-August-1-2016.pdf";
+/// Default Let's Encrypt intermediate certificate URL to chain when needed.
+pub const LETSENCRYPT_INTERMEDIATE_CERT_URL: &'static str = "https://letsencrypt.org/certs/\
+                                                             lets-encrypt-x3-cross-signed.pem";
 /// Default bit lenght for RSA keys and `X509_REQ`
 const BIT_LENGTH: u32 = 2048;
 
-const LETSENCRYPT_CA_SERVER: &'static str = "https://acme-v01.api.letsencrypt.org";
-const LETSENCRYPT_AGREEMENT: &'static str = "https://letsencrypt.org/documents/LE-SA-v1.1.\
-                                             1-August-1-2016.pdf";
 
+/// Directory object to configure client. Mail entry point of `acme-client`.
+///
+/// See [section-6.1.1](https://tools.ietf.org/html/draft-ietf-acme-acme-05#section-6.1.1)
+/// for more details.
+pub struct Directory {
+    /// Base URL of directory
+    url: String,
+    directory: Json,
+}
+
+/// Registered account object.
+///
+/// Every operation requires a registered account. To register an `Account` you can use
+/// `Directory::register_account` method.
+///
+/// See [AccountRegistration](struct.AccountRegistration.html) helper for more details.
+pub struct Account {
+    directory: Directory,
+    pkey: PKey,
+}
+
+
+/// Helper to register an account.
+pub struct AccountRegistration {
+    directory: Directory,
+    pkey: Option<PKey>,
+    email: Option<String>,
+    contact: Option<Vec<String>>,
+    agreement: Option<String>,
+}
+
+
+/// Helper to sign a certificate.
+pub struct CertificateSigner<'a> {
+    account: &'a Account,
+    domains: &'a [&'a str],
+    pkey: Option<PKey>,
+    csr: Option<X509Req>,
+}
+
+
+/// A signed certificate.
+pub struct SignedCertificate {
+    cert: X509,
+    csr: X509Req,
+    pkey: PKey,
+}
+
+
+/// Identifier authorization object
+pub struct Authorization<'a>(Vec<Challenge<'a>>);
+
+
+
+impl Directory {
+    /// Creates a Directory from `LETSENCRYPT_DIRECTORY_URL`.
+    pub fn lets_encrypt() -> Result<Directory> {
+        Directory::from_url(LETSENCRYPT_DIRECTORY_URL)
+    }
+
+    /// Creates a Directory from directory URL.
+    ///
+    /// ```rust
+    /// use acme_client::Directory;
+    /// let dir = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
+    ///     .unwrap();
+    /// ```
+    pub fn from_url(url: &str) -> Result<Directory> {
+        let client = Client::new()?;
+        let mut res = client.get(url).send()?;
+        let mut content = String::new();
+        res.read_to_string(&mut content)?;
+        Ok(Directory {
+               url: url.to_owned(),
+               directory: Json::from_str(&content)?,
+           })
+
+    }
+
+    /// Returns url for the resource.
+    fn url_for(&self, resource: &str) -> Option<&str> {
+        self.directory
+            .as_object()
+            .and_then(|o| o.get(resource))
+            .and_then(|k| k.as_string())
+    }
+
+    /// Consumes directory and creates new AccountRegistration.
+    ///
+    /// AccountRegistration is used to register an account.
+    ///
+    /// ```rust,no_run
+    /// use acme_client::Directory;
+    ///
+    /// let directory = Directory::lets_encrypt().unwrap();
+    /// let account = directory.account_registration()
+    ///                        .email("example@example.org")
+    ///                        .register()
+    ///                        .unwrap();
+    /// ```
+    pub fn account_registration(self) -> AccountRegistration {
+        AccountRegistration {
+            directory: self,
+            pkey: None,
+            email: None,
+            contact: None,
+            agreement: None,
+        }
+    }
+
+    /// Gets nonce header from directory.
+    ///
+    /// This function will try to look for `new-nonce` key in directory if it doesn't exists
+    /// it will try to get nonce header from directory url.
+    fn get_nonce(&self) -> Result<String> {
+        let url = self.url_for("new-nonce").unwrap_or(&self.url);
+        let client = Client::new()?;
+        let res = client.get(url).send()?;
+        res.headers()
+            .get::<hyperx::ReplayNonce>()
+            .ok_or("Replay-Nonce header not found".into())
+            .and_then(|nonce| Ok(nonce.as_str().to_string()))
+    }
+
+    /// Makes a new post request to directory, signs payload with pkey.
+    ///
+    /// Returns status code and Json object from reply.
+    fn request<T: ToJson>(&self,
+                          pkey: &PKey,
+                          resource: &str,
+                          payload: T)
+                          -> Result<(StatusCode, Json)> {
+        let mut json = payload.to_json();
+        json.as_object_mut().and_then(|obj| obj.insert("resource".to_owned(), resource.to_json()));
+        let jws = self.jws(pkey, json)?;
+        let client = Client::new()?;
+        let mut res = client.post(self.url_for(resource)
+                                      .ok_or(format!("URL for resource: {} not found",
+                                                     resource))?)
+            .body(&jws[..])
+            .send()?;
+
+        let res_json = {
+            let mut res_content = String::new();
+            res.read_to_string(&mut res_content)?;
+            if !res_content.is_empty() {
+                Json::from_str(&res_content)?
+            } else {
+                true.to_json()
+            }
+        };
+
+        Ok((*res.status(), res_json))
+    }
+
+    /// Makes a Flattened JSON Web Signature from payload
+    fn jws<T: ToJson>(&self, pkey: &PKey, payload: T) -> Result<String> {
+        let nonce = self.get_nonce()?;
+        let mut data: HashMap<String, Json> = HashMap::new();
+
+        // header: 'alg': 'RS256', 'jwk': { e, n, kty }
+        let mut header: HashMap<String, Json> = HashMap::new();
+        header.insert("alg".to_owned(), "RS256".to_json());
+        header.insert("jwk".to_owned(), self.jwk(pkey)?);
+        data.insert("header".to_owned(), header.to_json());
+
+        // payload: b64 of payload
+        let payload64 = b64(encode(&payload.to_json())?.into_bytes());
+        data.insert("payload".to_owned(), payload64.to_json());
+
+        // protected: base64 of header + nonce
+        header.insert("nonce".to_owned(), nonce.to_json());
+        let protected64 = b64(encode(&header)?.into_bytes());
+        data.insert("protected".to_owned(), protected64.to_json());
+
+        // signature: b64 of hash of signature of {proctected64}.{payload64}
+        data.insert("signature".to_owned(), {
+            let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
+            signer.update(&format!("{}.{}", protected64, payload64).into_bytes())?;
+            b64(signer.finish()?).to_json()
+        });
+
+        let json_str = encode(&data)?;
+        Ok(json_str)
+    }
+
+    /// Returns jwk field of jws header
+    fn jwk(&self, pkey: &PKey) -> Result<Json> {
+        let rsa = pkey.rsa()?;
+        let mut jwk: HashMap<String, String> = HashMap::new();
+        jwk.insert("e".to_owned(),
+                   b64(rsa.e()
+                           .ok_or("e not found in RSA key")?
+                           .to_vec()));
+        jwk.insert("kty".to_owned(), "RSA".to_owned());
+        jwk.insert("n".to_owned(),
+                   b64(rsa.n()
+                           .ok_or("n not found in RSA key")?
+                           .to_vec()));
+        Ok(jwk.to_json())
+    }
+}
+
+
+
+
+impl Account {
+    /// Creates a new identifier authorization object for domain
+    pub fn authorization<'a>(&'a self, domain: &str) -> Result<Authorization<'a>> {
+        info!("Sending identifier authorization request for {}", domain);
+
+        let mut map = HashMap::new();
+        map.insert("identifier".to_owned(), {
+            let mut map = HashMap::new();
+            map.insert("type".to_owned(), "dns".to_owned());
+            map.insert("value".to_owned(), domain.to_owned());
+            map
+        });
+        let (status, resp) = self.directory().request(self.pkey(), "new-authz", map)?;
+
+        if status != StatusCode::Created {
+            return Err(ErrorKind::AcmeServerError(resp).into());
+        }
+
+        let mut challenges = Vec::new();
+        for challenge in resp.as_object()
+                .and_then(|obj| obj.get("challenges"))
+                .and_then(|c| c.as_array())
+                .ok_or("No challenge found")? {
+
+            let obj = challenge.as_object().ok_or("Challenge object not found")?;
+
+            let ctype = obj.get("type")
+                .and_then(|t| t.as_string())
+                .ok_or("Challenge type not found")?
+                .to_owned();
+            let uri = obj.get("uri")
+                .and_then(|t| t.as_string())
+                .ok_or("URI not found")?
+                .to_owned();
+            let token = obj.get("token")
+                .and_then(|t| t.as_string())
+                .ok_or("Token not found")?
+                .to_owned();
+
+            // This seems really cryptic but it's not
+            // https://tools.ietf.org/html/draft-ietf-acme-acme-05#section-7.1
+            // key-authz = token || '.' || base64url(JWK\_Thumbprint(accountKey))
+            let key_authorization =
+                format!("{}.{}",
+                        token,
+                        b64(hash(MessageDigest::sha256(),
+                                 &encode(&self.directory().jwk(self.pkey())?)?.into_bytes())?));
+
+            let challenge = Challenge {
+                account: self,
+                ctype: ctype,
+                url: uri,
+                token: token,
+                key_authorization: key_authorization,
+            };
+            challenges.push(challenge);
+        }
+
+        Ok(Authorization(challenges))
+    }
+
+    /// Creates a new `CertificateSigner` helper to sign a certificate for list of domains.
+    ///
+    /// `domains` must be list of the domain names you want to sign a certificate for.
+    /// Currently there is no way to retrieve subject alt names from a X509Req.
+    ///
+    /// You can additionally use your own private key and CSR.
+    /// See [`CertificateSigner`](struct.CertificateSigner.html) for details.
+    pub fn certificate_signer<'a>(&'a self, domains: &'a [&'a str]) -> CertificateSigner<'a> {
+        CertificateSigner {
+            account: self,
+            domains: domains,
+            pkey: None,
+            csr: None,
+        }
+    }
+
+    /// Revokes a signed certificate from pem formatted file
+    pub fn revoke_certificate_from_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let content = {
+            let mut file = File::open(path)?;
+            let mut content = Vec::new();
+            file.read_to_end(&mut content)?;
+            content
+        };
+        let cert = X509::from_pem(&content)?;
+        self.revoke_certificate(&cert)
+    }
+
+    /// Revokes a signed certificate
+    pub fn revoke_certificate(&self, cert: &X509) -> Result<()> {
+        let (status, resp) = {
+            let mut map = HashMap::new();
+            map.insert("certificate".to_owned(), b64(cert.to_der()?));
+
+            self.directory().request(self.pkey(), "revoke-cert", map)?
+        };
+
+        match status {
+            StatusCode::Ok => info!("Certificate successfully revoked"),
+            StatusCode::Conflict => warn!("Certificate already revoked"),
+            _ => return Err(ErrorKind::AcmeServerError(resp).into()),
+        }
+
+        Ok(())
+    }
+
+    /// Writes account private key to a writer
+    pub fn write_private_key<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+        Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
+    }
+
+    /// Saves account private key to a file
+    pub fn save_private_key<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let mut file = File::create(path)?;
+        self.write_private_key(&mut file)
+    }
+
+    /// Returns a reference to account private key
+    pub fn pkey(&self) -> &PKey {
+        &self.pkey
+    }
+
+    /// Returns a reference to directory used to create account
+    pub fn directory(&self) -> &Directory {
+        &self.directory
+    }
+}
+
+
+impl AccountRegistration {
+    /// Sets contact email address
+    pub fn email(mut self, email: &str) -> AccountRegistration {
+        self.email = Some(email.to_owned());
+        self
+    }
+
+    /// Sets contact details such as telephone number (Let's Encrypt only supports email address).
+    pub fn contact(mut self, contact: &[&str]) -> AccountRegistration {
+        self.contact = Some(contact.iter().map(|c| c.to_string()).collect());
+        self
+    }
+
+    /// Sets agreement url, `LETSENCRYPT_AGREEMENT_URL` will be used during registration
+    /// if it's not set.
+    pub fn agreement(mut self, url: &str) -> AccountRegistration {
+        self.agreement = Some(url.to_owned());
+        self
+    }
+
+    /// Sets account private key. A new key will be generated if it's not set.
+    pub fn pkey(mut self, pkey: PKey) -> AccountRegistration {
+        self.pkey = Some(pkey);
+        self
+    }
+
+    /// Sets PKey from a PEM formatted file.
+    pub fn pkey_from_file<P: AsRef<Path>>(mut self, path: P) -> Result<AccountRegistration> {
+        self.pkey = Some(read_pkey(path)?);
+        Ok(self)
+    }
+
+    /// Registers an account.
+    ///
+    /// A PKey will be generated if it doesn't exists.
+    pub fn register(self) -> Result<Account> {
+        info!("Registering account");
+        let mut map = HashMap::new();
+        map.insert("agreement".to_owned(),
+                   self.agreement.unwrap_or(LETSENCRYPT_AGREEMENT_URL.to_owned()).to_json());
+        if let Some(mut contact) = self.contact {
+            if let Some(email) = self.email {
+                contact.push(format!("mailto:{}", email));
+            }
+            map.insert("contract".to_owned(), contact.to_json());
+        } else if let Some(email) = self.email {
+            map.insert("contract".to_owned(),
+                       vec![format!("mailto:{}", email)].to_json());
+        }
+        let pkey = self.pkey.unwrap_or(gen_key()?);
+        let (status, resp) = self.directory.request(&pkey, "new-reg", map)?;
+        match status {
+            StatusCode::Created => debug!("User successfully registered"),
+            StatusCode::Conflict => debug!("User already registered"),
+            _ => return Err(ErrorKind::AcmeServerError(resp).into()),
+        };
+
+        Ok(Account {
+               directory: self.directory,
+               pkey: pkey,
+           })
+    }
+}
+
+
+impl<'a> CertificateSigner<'a> {
+    /// Set PKey of CSR
+    pub fn pkey(mut self, pkey: PKey) -> CertificateSigner<'a> {
+        self.pkey = Some(pkey);
+        self
+    }
+
+    /// Load PEM formatted PKey from file
+    pub fn pkey_from_file<P: AsRef<Path>>(mut self, path: P) -> Result<CertificateSigner<'a>> {
+        self.pkey = Some(read_pkey(path)?);
+        Ok(self)
+    }
+
+    /// Set CSR to sign
+    pub fn csr(mut self, csr: X509Req) -> CertificateSigner<'a> {
+        self.csr = Some(csr);
+        self
+    }
+
+    /// Load PKey and CSR from file
+    pub fn csr_from_file<P: AsRef<Path>>(mut self,
+                                         pkey_path: P,
+                                         csr_path: P)
+                                         -> Result<CertificateSigner<'a>> {
+        self.pkey = Some(read_pkey(pkey_path)?);
+        let content = {
+            let mut file = File::open(csr_path)?;
+            let mut content = Vec::new();
+            file.read_to_end(&mut content)?;
+            content
+        };
+        self.csr = Some(X509Req::from_pem(&content)?);
+        Ok(self)
+    }
+
+
+    /// Signs certificate.
+    ///
+    /// CSR and PKey will be generated if it doesn't set or loaded first.
+    pub fn sign_certificate(self) -> Result<SignedCertificate> {
+        info!("Signing certificate");
+        let pkey = self.pkey.unwrap_or(gen_key()?);
+        let csr = self.csr.unwrap_or(gen_csr(&pkey, self.domains)?);
+        let mut map = HashMap::new();
+        map.insert("resource".to_owned(), "new-cert".to_owned());
+        map.insert("csr".to_owned(), b64(csr.to_der()?));
+
+        let client = Client::new()?;
+        let jws = self.account
+            .directory()
+            .jws(self.account.pkey(), map)?;
+        let mut res = client.post(self.account
+                                      .directory()
+                                      .url_for("new-cert")
+                                      .ok_or("new-cert url not found")?)
+            .body(&jws[..])
+            .send()?;
+
+        if res.status() != &StatusCode::Created {
+            let res_json = {
+                let mut res_content = String::new();
+                res.read_to_string(&mut res_content)?;
+                Json::from_str(&res_content)?
+            };
+            return Err(ErrorKind::AcmeServerError(res_json).into());
+        }
+
+        let mut crt_der = Vec::new();
+        res.read_to_end(&mut crt_der)?;
+        let cert = X509::from_der(&crt_der)?;
+
+        debug!("Certificate successfully signed");
+        Ok(SignedCertificate {
+               cert: cert,
+               csr: csr,
+               pkey: pkey,
+           })
+    }
+}
+
+
+impl SignedCertificate {
+    /// Saves signed certificate to a file
+    pub fn save_signed_certificate<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let mut file = File::create(path)?;
+        self.write_signed_certificate(&mut file)
+    }
+
+    /// Saves intermediate certificate and signed certificate to a file
+    ///
+    /// You can additionally provide intermediate certificate url, by default it will use
+    /// `LETSENCRYPT_INTERMEDIATE_CERT_URL`.
+    pub fn save_signed_certificate_chain<P: AsRef<Path>>(&self,
+                                                         url: Option<&str>,
+                                                         path: P)
+                                                         -> Result<()> {
+        let mut file = File::create(path)?;
+        self.write_intermediate_certificate(url, &mut file)?;
+        self.write_signed_certificate(&mut file)?;
+        Ok(())
+    }
+
+    /// Saves private key used to sign certificate to a file
+    pub fn save_private_key<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let mut file = File::create(path)?;
+        self.write_private_key(&mut file)
+    }
+
+    /// Writes signed certificate to writer.
+    pub fn write_signed_certificate<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+        writer.write_all(&self.cert.to_pem()?)?;
+        Ok(())
+    }
+
+    /// Writes intermediate certificate to writer.
+    ///
+    /// You can additionally provide intermediate certificate url, by default it will use
+    /// `LETSENCRYPT_INTERMEDIATE_CERT_URL`.
+    pub fn write_intermediate_certificate<W: Write>(&self,
+                                                    url: Option<&str>,
+                                                    mut writer: &mut W)
+                                                    -> Result<()> {
+        let cert = self.get_intermediate_certificate(url)?;
+        writer.write_all(&cert.to_pem()?)?;
+        Ok(())
+    }
+
+    /// Gets intermediate certificate from url.
+    ///
+    /// `LETSENCRYPT_INTERMEDIATE_CERT_URL` will be used if url is None.
+    fn get_intermediate_certificate(&self, url: Option<&str>) -> Result<X509> {
+        let client = Client::new()?;
+        let mut res = client.get(url.unwrap_or(LETSENCRYPT_INTERMEDIATE_CERT_URL)).send()?;
+        let mut content = Vec::new();
+        res.read_to_end(&mut content)?;
+        Ok(X509::from_pem(&content)?)
+    }
+
+    /// Writes private key used to sign certificate to a writer
+    pub fn write_private_key<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+        Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
+    }
+
+    /// Returns reference to certificate
+    pub fn cert(&self) -> &X509 {
+        &self.cert
+    }
+
+    /// Returns reference to CSR used to sign certificate
+    pub fn csr(&self) -> &X509Req {
+        &self.csr
+    }
+
+    /// Returns reference to pkey used to sign certificate
+    pub fn pkey(&self) -> &PKey {
+        &self.pkey
+    }
+}
+
+
+impl<'a> Authorization<'a> {
+    /// Gets a challenge.
+    ///
+    /// Pattern is used in `starts_with` for type comparison.
+    pub fn get_challenge(&self, pattern: &str) -> Option<&Challenge> {
+        for challenge in &self.0 {
+            if challenge.ctype().starts_with(pattern) {
+                return Some(challenge);
+            }
+        }
+        None
+    }
+
+    /// Gets http challenge
+    pub fn get_http_challenge(&self) -> Option<&Challenge> {
+        self.get_challenge("http")
+    }
+
+    /// Gets dns challenge
+    pub fn get_dns_challenge(&self) -> Option<&Challenge> {
+        self.get_challenge("dns")
+    }
+}
+
+
+/// A verification challenge
+pub struct Challenge<'a> {
+    account: &'a Account,
+    /// Type of verification challenge. Usually `http-01`, `dns-01` for letsencrypt.
+    ctype: String,
+    /// URL to trigger challenge.
+    url: String,
+    /// Challenge token.
+    token: String,
+    /// Key authorization.
+    key_authorization: String,
+}
+
+
+impl<'a> Challenge<'a> {
+    /// Saves key authorization into `{path}/.well-known/acme-challenge/{token}` for http challenge.
+    pub fn save_key_authorization<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        use std::fs::create_dir_all;
+        let path = path.as_ref().join(".well-known").join("acme-challenge");
+        debug!("Saving validation token into: {:?}", &path);
+        create_dir_all(&path)?;
+
+        let mut file = File::create(path.join(&self.token))?;
+        writeln!(&mut file, "{}", self.key_authorization)?;
+
+        Ok(())
+    }
+
+    /// Gets DNS validation signature.
+    ///
+    /// This value is used for verification of domain over DNS. Signature must be saved
+    /// as a TXT record for `_acme_challenge.example.com`.
+    pub fn signature(&self) -> Result<String> {
+        Ok(b64(hash(MessageDigest::sha256(),
+                    &self.key_authorization.clone().into_bytes())?))
+    }
+
+    /// Returns challenge type, usually `http-01` or `dns-01` for Let's Encrypt.
+    pub fn ctype(&self) -> &str {
+        &self.ctype[..]
+    }
+
+    /// Triggers validation.
+    pub fn validate(&self) -> Result<()> {
+        info!("Triggering {} validation", self.ctype);
+        let payload = {
+            let map = {
+                let mut map: HashMap<String, Json> = HashMap::new();
+                map.insert("type".to_owned(), self.ctype.to_json());
+                map.insert("token".to_owned(), self.token.to_json());
+                map.insert("resource".to_owned(), "challenge".to_json());
+                map.insert("keyAuthorization".to_owned(),
+                           self.key_authorization.to_json());
+                map
+            };
+            self.account
+                .directory()
+                .jws(self.account.pkey(), map)?
+        };
+
+        let client = Client::new()?;
+        let mut resp = client.post(&self.url)
+            .body(&payload[..])
+            .send()?;
+
+        let mut res_json: Json = {
+            let mut res_content = String::new();
+            resp.read_to_string(&mut res_content)?;
+            Json::from_str(&res_content)?
+        };
+
+        if resp.status() != &StatusCode::Accepted {
+            return Err(ErrorKind::AcmeServerError(res_json).into());
+        }
+
+        loop {
+            let status = res_json.as_object()
+                .and_then(|o| o.get("status"))
+                .and_then(|s| s.as_string())
+                .ok_or("Status not found")?
+                .to_owned();
+
+            if status == "pending" {
+                debug!("Status is pending, trying again...");
+                let mut resp = client.get(&self.url).send()?;
+                res_json = {
+                    let mut res_content = String::new();
+                    resp.read_to_string(&mut res_content)?;
+                    Json::from_str(&res_content)?
+                };
+            } else if status == "valid" {
+                return Ok(());
+            } else if status == "invalid" {
+                return Err(ErrorKind::AcmeServerError(res_json).into());
+            }
+
+            use std::thread::sleep;
+            use std::time::Duration;
+            sleep(Duration::from_secs(2));
+        }
+    }
+}
 
 
 // header! is making a public struct,
@@ -114,735 +972,62 @@ mod hyperx {
 }
 
 
-/// A verification challenge
-#[derive(Clone, Debug)]
-pub struct Challenge {
-    /// Type of verification challenge. Usually `http-01`, `dns-01` for letsencrypt.
-    pub ctype: String,
-    /// Challenge verification trigger URL.
-    pub url: String,
-    /// Challenge token.
-    pub token: String,
-    /// Key authorization.
-    pub key_authorization: String,
-}
+/// Error and result types.
+pub mod error {
+    use std::io;
+    use openssl;
+    use hyper;
+    use reqwest;
+    use rustc_serialize;
+
+    error_chain! {
+        types {
+            Error, ErrorKind, ChainErr, Result;
+        }
+
+        links {
+        }
+
+        foreign_links {
+            OpenSslErrorStack(openssl::error::ErrorStack);
+            IoError(io::Error);
+            HyperError(hyper::Error);
+            ReqwestError(reqwest::Error);
+            JsonEncoderError(rustc_serialize::json::EncoderError);
+            JsonParserError(rustc_serialize::json::ParserError);
+        }
+
+        errors {
+            AcmeServerError(resp: rustc_serialize::json::Json) {
+                description("Acme server error")
+                    display("Acme server error: {}", acme_server_error_description(resp))
+            }
+        }
+    }
 
 
-/// Automatic Certificate Management Environment (ACME) client
-pub struct AcmeClient {
-    ca_server: String,
-    agreement: String,
-    bit_length: u32,
-    user_key: Option<PKey>,
-    domain: Option<String>,
-    domain_key: Option<PKey>,
-    domain_csr: Option<X509Req>,
-    challenges_raw: Option<Json>,
-    challenges: Vec<Challenge>,
-    signed_cert: Option<X509>,
-    chain_url: Option<String>,
-    saved_challenge_path: Option<PathBuf>,
-}
-
-
-impl Default for AcmeClient {
-    fn default() -> Self {
-        AcmeClient {
-            ca_server: LETSENCRYPT_CA_SERVER.to_owned(),
-            agreement: LETSENCRYPT_AGREEMENT.to_owned(),
-            bit_length: BIT_LENGTH,
-            user_key: None,
-            domain: None,
-            domain_key: None,
-            domain_csr: None,
-            challenges_raw: None,
-            challenges: Vec::new(),
-            signed_cert: None,
-            chain_url: None,
-            saved_challenge_path: None,
+    fn acme_server_error_description(resp: &rustc_serialize::json::Json) -> String {
+        if let Some(obj) = resp.as_object() {
+            let t = obj.get("type").and_then(|t| t.as_string()).unwrap_or("");
+            let detail = obj.get("detail").and_then(|d| d.as_string()).unwrap_or("");
+            format!("{} {}", t, detail)
+        } else {
+            String::new()
         }
     }
 }
 
 
-impl AcmeClient {
-    pub fn new() -> Result<Self> {
-        Ok(AcmeClient::default())
-    }
 
-
-    /// Sets domain name.
-    pub fn set_domain(mut self, domain: &str) -> Result<Self> {
-        self.domain = Some(domain.to_owned());
-        Ok(self)
-    }
-
-
-    /// Sets CA server, default is: `https://acme-v01.api.letsencrypt.org`
-    pub fn set_ca_server(mut self, ca_server: &str) -> Result<Self> {
-        self.ca_server = ca_server.to_owned();
-        Ok(self)
-    }
-
-
-    /// Sets intermediate PEM certificate URL to chain signed certificate with before
-    /// `save_signed_certificate` and `write_signed_certificate`.
-    ///
-    /// Let's Encrypt intermediate certificates can be found in
-    /// [certificates page](https://letsencrypt.org/certificates/).
-    ///
-    /// Let's Encrypt Authority X3 (IdenTrust cross-signed) certificate URL is:
-    /// `https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem`
-    pub fn set_chain_url(mut self, url: &str) -> Result<Self> {
-        self.chain_url = Some(url.to_owned());
-        Ok(self)
-    }
-
-
-    /// Generates new user key.
-    pub fn gen_user_key(mut self) -> Result<Self> {
-        debug!("Generating user key");
-        if self.user_key.is_none() {
-            self.user_key = Some(try!(gen_key(self.bit_length)));
-        }
-        Ok(self)
-    }
-
-
-    /// Generates new domain key.
-    pub fn gen_domain_key(mut self) -> Result<Self> {
-        debug!("Generating domain key");
-        if self.domain_key.is_none() {
-            self.domain_key = Some(try!(gen_key(self.bit_length)));
-        }
-        Ok(self)
-    }
-
-
-    /// Sets user aggrement.
-    ///
-    /// This agreement is used in user registration and user must agree this agreement. Default is:
-    /// [LE-SA-v1.1.1-August-1-2016.pdf](https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf)
-    ///
-    /// Let's Encrypt requires an URL to agreed user agrement.
-    pub fn set_agreement(mut self, agreement: &str) -> Result<Self> {
-        self.agreement = agreement.to_owned();
-        Ok(self)
-    }
-
-    /// Loads private key from PEM file path.
-    pub fn load_user_key<P: AsRef<Path>>(mut self, private_key_path: P) -> Result<Self> {
-        self.user_key = Some(try!(load_private_key(private_key_path)));
-        Ok(self)
-    }
-
-
-    /// Loads private domain key from  PEM file path.
-    pub fn load_domain_key<P: AsRef<Path>>(mut self, private_key_path: P) -> Result<Self> {
-        self.domain_key = Some(try!(load_private_key(private_key_path)));
-        Ok(self)
-    }
-
-
-    /// Gets domain name
-    pub fn get_domain(&self) -> Option<String> {
-        self.domain.clone()
-    }
-
-    /// Gets the public key as PEM.
-    pub fn get_user_public_key(&self) -> Option<Vec<u8>> {
-        self.user_key
-            .as_ref()
-            .and_then(|k| pem_encode_key(k, true).ok())
-    }
-
-    /// Gets the private key as PEM.
-    pub fn get_user_private_key(&self) -> Option<Vec<u8>> {
-        self.user_key
-            .as_ref()
-            .and_then(|k| pem_encode_key(k, false).ok())
-    }
-
-    /// Gets domain public key as PEM.
-    pub fn get_domain_public_key(&self) -> Option<Vec<u8>> {
-        self.domain_key
-            .as_ref()
-            .and_then(|k| pem_encode_key(k, true).ok())
-    }
-
-
-    /// Gets domain private key as PEM.
-    pub fn get_domain_private_key(&self) -> Option<Vec<u8>> {
-        self.domain_key
-            .as_ref()
-            .and_then(|k| pem_encode_key(k, false).ok())
-    }
-
-    /// Saves user public key as PEM.
-    pub fn save_user_public_key<P: AsRef<Path>>(self, path: P) -> Result<Self> {
-        try!(self.user_key
-             .as_ref()
-             .ok_or("Key not found".into())
-             .and_then(|k| save_key(k, true, path)));
-        Ok(self)
-    }
-
-
-    /// Saves user private key as PEM.
-    pub fn save_user_private_key<P: AsRef<Path>>(self, path: P) -> Result<Self> {
-        try!(self.user_key
-             .as_ref()
-             .ok_or("Key not found".into())
-             .and_then(|k| save_key(k, false, path)));
-        Ok(self)
-    }
-
-
-    /// Saves domain public key as PEM.
-    pub fn save_domain_public_key<P: AsRef<Path>>(self, path: P) -> Result<Self> {
-        try!(self.domain_key
-             .as_ref()
-             .ok_or("Key not found".into())
-             .and_then(|k| save_key(k, true, path)));
-        Ok(self)
-    }
-
-
-    /// Saves domain private key as PEM.
-    pub fn save_domain_private_key<P: AsRef<Path>>(self, path: P) -> Result<Self> {
-        try!(self.domain_key
-             .as_ref()
-             .ok_or("Key not found".into())
-             .and_then(|k| save_key(k, false, path)));
-        Ok(self)
-    }
-
-
-    /// Sets bit lenght for CSR generation. Only 1024, 2048 and 4096 allowed.
-    ///
-    /// Default is 2048.
-    pub fn set_bit_length(mut self, bit_length: u32) -> Result<Self> {
-        match bit_length {
-            1024 | 2048 | 4096 => self.bit_length = bit_length,
-            _ => return Err("Invalid bit length. Only 1024 2048 and 4096 allowed".into()),
-        }
-        Ok(self)
-    }
-
-
-    /// Generates new certificate signing request for domain.
-    ///
-    /// You need to set a domain name with `domain()` first.
-    pub fn gen_csr(mut self) -> Result<Self> {
-        self = try!(self.gen_domain_key());
-        let domain =
-            try!(self.domain.clone().ok_or("Domain not found. Use domain() to set a domain"));
-        let generator = X509Generator::new()
-            .set_valid_period(365)
-            .add_name("CN".to_owned(), domain)
-            .set_sign_hash(MessageDigest::sha256())
-            .add_extension(Extension::KeyUsage(vec![KeyUsageOption::DigitalSignature]));
-
-        {
-            let domain_key = try!(self.domain_key.as_ref().ok_or("Domain key not found"));
-            self.domain_csr = Some(try!(generator.request(&domain_key)));
-        }
-
-        Ok(self)
-    }
-
-
-    /// Loads CSR from PEM file.
-    pub fn load_csr<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
-        let content = {
-            let mut file = try!(File::open(path));
-            let mut content = Vec::new();
-            try!(file.read_to_end(&mut content));
-            content
-        };
-        self.domain_csr = Some(try!(X509Req::from_pem(&content)));
-        Ok(self)
-    }
-
-
-    /// Saves CSR file as PEM.
-    pub fn save_csr<P: AsRef<Path>>(self, path: P) -> Result<Self> {
-        {
-            let mut file = try!(File::create(path));
-            let csr = try!(self.domain_csr
-                           .as_ref()
-                           .ok_or("CSR not found"));
-            let pem = try!(csr.to_pem());
-            try!(file.write_all(&pem));
-        }
-
-        Ok(self)
-    }
-
-
-
-    /// Loads a signed X509 certificate as pem
-    ///
-    /// This is required if you want to revoke a signed certificate
-    pub fn load_certificate<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
-        let content = {
-            let mut file = try!(File::open(path));
-            let mut content = Vec::new();
-            try!(file.read_to_end(&mut content));
-            content
-        };
-        self.signed_cert = Some(try!(X509::from_pem(&content)));
-        Ok(self)
-    }
-
-
-    /// Registers new user account.
-    ///
-    /// You can optionally use an email for this account.
-    ///
-    /// This function will generate a user key if it's not already generated or loaded from a PEM
-    /// file.
-    pub fn register_account(mut self, email: Option<&str>) -> Result<Self> {
-        if let None = self.user_key {
-            self = try!(self.gen_user_key());
-        }
-
-        info!("Registering account");
-
-        let mut map = BTreeMap::new();
-        map.insert("agreement".to_owned(), self.agreement.to_json());
-        if let Some(email) = email {
-            map.insert("contract".to_owned(),
-            vec![format!("mailto:{}", email)].to_json());
-        }
-        let (status, resp) = try!(self.request("new-reg", map));
-        match status {
-            StatusCode::Created => debug!("User successfully registered"),
-            StatusCode::Conflict => debug!("User already registered"),
-            _ => return Err(ErrorKind::AcmeServerError(resp).into()),
-        };
-        Ok(self)
-    }
-
-
-    /// Makes new identifier authorization request and gets challenges for domain.
-    pub fn identify_domain(mut self) -> Result<Self> {
-        info!("Sending identifier authorization request");
-
-        let mut map = BTreeMap::new();
-        map.insert("identifier".to_owned(), {
-            let mut map = BTreeMap::new();
-            map.insert("type".to_owned(), "dns".to_owned());
-            map.insert("value".to_owned(),
-            try!(self.domain
-                 .clone()
-                 .ok_or("Domain not found. Use domain() to set a domain")));
-            map
-        });
-        let (status, resp) = try!(self.request("new-authz", map));
-
-        if status != StatusCode::Created {
-            return Err(ErrorKind::AcmeServerError(resp).into());
-        }
-
-        self.challenges_raw = Some(resp.clone());
-
-        for challenge in try!(resp.as_object()
-                              .and_then(|obj| obj.get("challenges"))
-                              .and_then(|c| c.as_array())
-                              .ok_or("No challenge found")) {
-
-            let ctype = try!(challenge.as_object()
-                           .and_then(|obj| obj.get("type"))
-                           .and_then(|t| t.as_string())
-                           .ok_or("Challenge type not found"))
-                .to_owned();
-
-            let uri = try!(challenge.as_object()
-                           .and_then(|obj| obj.get("uri"))
-                           .and_then(|t| t.as_string())
-                           .ok_or("URI not found"))
-                .to_owned();
-
-            let token = try!(challenge.as_object()
-                             .and_then(|obj| obj.get("token"))
-                             .and_then(|t| t.as_string())
-                             .ok_or("Token not found"))
-                .to_owned();
-
-
-            let key_authorization =
-                format!("{}.{}",
-                        token,
-                        b64(try!(hash(MessageDigest::sha256(), &try!(encode(&try!(self.jwk()))).into_bytes()))));
-
-            self.challenges.push(Challenge {
-                ctype: ctype,
-                url: uri,
-                token: token,
-                key_authorization: key_authorization,
-            });
-        }
-
-        Ok(self)
-    }
-
-
-    /// Gets a challenge.
-    ///
-    /// You need to get challenges first with `identify_domain()`.
-    ///
-    /// Pattern is used in `starts_with` for type comparison.
-    pub fn get_challenge(&self, pattern: &str) -> Option<Challenge> {
-        for challenge in &self.challenges {
-            if challenge.ctype.starts_with(pattern) {
-                return Some(challenge.clone());
-            }
-        }
-        None
-    }
-
-
-    /// Saves validation token into `{path}/.well-known/acme-challenge/{token}`.
-    pub fn save_http_challenge_into<P: AsRef<Path>>(mut self, path: P) -> Result<Self> {
-        let challenge = try!(self.get_challenge("http").ok_or("HTTP challenge not found"));
-
-        use std::fs::create_dir_all;
-        let path = path.as_ref().join(".well-known").join("acme-challenge");
-        debug!("Saving validation token into: {:?}", &path);
-        try!(create_dir_all(&path));
-
-        let mut file = try!(File::create(path.join(&challenge.token)));
-        try!(writeln!(&mut file, "{}", challenge.key_authorization));
-
-        self.saved_challenge_path = Some(path.join(&challenge.token).to_path_buf());
-
-        Ok(self)
-    }
-
-
-    /// Triggers HTTP validation to verify domain ownership.
-    pub fn simple_http_validation(self) -> Result<Self> {
-        let challenge = try!(self.get_challenge("http").ok_or("HTTP challenge not found"));
-        self.trigger_validation(challenge)
-    }
-
-
-    /// Triggers DNS validation to verify domain ownership.
-    pub fn dns_validation(self) -> Result<Self> {
-        let challenge = try!(self.get_challenge("dns").ok_or("DNS challenge not found"));
-        self.trigger_validation(challenge)
-    }
-
-
-    /// Triggers validation for challenge
-    fn trigger_validation(self, challenge: Challenge) -> Result<Self> {
-        info!("Triggering {} validation", challenge.ctype);
-
-        let payload = {
-            let map = {
-                let mut map: BTreeMap<String, Json> = BTreeMap::new();
-                map.insert("type".to_owned(), challenge.ctype.to_json());
-                map.insert("token".to_owned(), challenge.token.to_json());
-                map.insert("resource".to_owned(), "challenge".to_json());
-                map.insert("keyAuthorization".to_owned(), challenge.key_authorization.to_json());
-                map
-            };
-            try!(self.jws(map))
-        };
-
-        let client = try!(Client::new());
-        let mut resp = try!(client.post(&challenge.url)
-                            .body(&payload[..])
-                            .send());
-
-        let mut res_json: Json = {
-            let mut res_content = String::new();
-            try!(resp.read_to_string(&mut res_content));
-            try!(Json::from_str(&res_content))
-        };
-
-        if resp.status() != &StatusCode::Accepted {
-            return Err(ErrorKind::AcmeServerError(res_json).into());
-        }
-
-        loop {
-            let status = try!(res_json.as_object()
-                              .and_then(|o| o.get("status"))
-                              .and_then(|s| s.as_string())
-                              .ok_or("Status not found"))
-                .to_owned();
-
-            if status == "pending" {
-                debug!("Status is pending, trying again...");
-                let mut resp = try!(client.get(&challenge.url).send());
-                res_json = {
-                    let mut res_content = String::new();
-                    try!(resp.read_to_string(&mut res_content));
-                    try!(Json::from_str(&res_content))
-                };
-            } else if status == "valid" {
-                return Ok(self);
-            } else if status == "invalid" {
-                return Err(ErrorKind::AcmeServerError(res_json).into());
-            }
-
-            use std::thread::sleep;
-            use std::time::Duration;
-            sleep(Duration::from_secs(2));
-        }
-
-    }
-
-
-    /// Gets DNS validation signature.
-    ///
-    /// This value is used for verification domain over DNS. Signature must be saved
-    /// as a TXT record for `_acme_challenge.example.com`.
-    pub fn get_dns_validation_signature(&mut self) -> Result<String> {
-        let challenge = try!(self.get_challenge("dns").ok_or("Challenge not found"));
-        Ok(b64(try!(hash(MessageDigest::sha256(), &challenge.key_authorization.into_bytes()))))
-    }
-
-
-    /// Signs certificate.
-    ///
-    /// You need to generate or load a CSR first. Domain also needs to be verified first.
-    pub fn sign_certificate(mut self) -> Result<Self> {
-        {
-            info!("Signing certificate");
-            let csr = {
-                if let None = self.domain_csr {
-                    self = try!(self.gen_csr());
-                }
-                try!(self.domain_csr.as_ref().ok_or("CSR not found, generate one with gen_csr()"))
-            };
-            let mut map = BTreeMap::new();
-            map.insert("resource".to_owned(), "new-cert".to_owned());
-            map.insert("csr".to_owned(), b64(try!(csr.to_der())));
-
-            let client = try!(Client::new());
-            let jws = try!(self.jws(map));
-            let mut res = try!(client.post(&format!("{}/acme/new-cert", self.ca_server))
-                               .body(&jws[..])
-                               .send());
-
-            if res.status() != &StatusCode::Created {
-                let res_json = {
-                    let mut res_content = String::new();
-                    try!(res.read_to_string(&mut res_content));
-                    try!(Json::from_str(&res_content))
-                };
-                return Err(ErrorKind::AcmeServerError(res_json).into());
-            }
-
-            let mut crt_der = Vec::new();
-            try!(res.read_to_end(&mut crt_der));
-
-            let b64 = {
-                let config = base64::Config {
-                    char_set: base64::CharacterSet::Standard,
-                    newline: base64::Newline::LF,
-                    pad: true,
-                    line_length: Some(64),
-                };
-                format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
-                        crt_der.to_base64(config))
-            };
-
-            self.signed_cert = Some(try!(X509::from_pem(&b64.as_bytes())));
-            debug!("Certificate successfully signed")
-        }
-
-        Ok(self)
-    }
-
-
-    /// Saves signed certificate as PEM.
-    pub fn save_signed_certificate<P: AsRef<Path>>(self, path: P) -> Result<Self> {
-        debug!("Saving signed certificate");
-        let mut file = try!(File::create(path));
-        self.write_signed_certificate(&mut file)
-    }
-
-
-    /// Writes signed certificate to writer
-    pub fn write_signed_certificate<W: Write>(self, mut writer: &mut W) -> Result<Self> {
-        {
-            let crt = try!(self.signed_cert
-                           .as_ref()
-                           .ok_or("Signed certificate not found, sign certificate \
-                        with sigh_certificate() \
-                        first"));
-
-            let pem = try!(crt.to_pem());
-            try!(writer.write_all(&pem));
-
-            if let Some(url) = self.chain_url.as_ref() {
-                let client = try!(Client::new());
-                let mut res = try!(client.get(url).send());
-                let mut content = String::new();
-                try!(res.read_to_string(&mut content));
-                try!(write!(&mut writer, "{}", content));
-            }
-        }
-
-        Ok(self)
-    }
-
-
-    /// Revokes a signed certificate
-    ///
-    /// You need to load a certificate with load_certificate first
-    pub fn revoke_signed_certificate(self) -> Result<Self> {
-        let (status, resp) = {
-            let crt = try!(self.signed_cert
-                           .as_ref()
-                           .ok_or("Signed certificate not found, load a signed \
-                              certificate with load_certificate() first"));
-
-            let mut map = BTreeMap::new();
-            map.insert("certificate".to_owned(), b64(try!(crt.to_der())));
-
-            try!(self.request("revoke-cert", map))
-        };
-
-        match status {
-            StatusCode::Ok => info!("Certificate successfully revoked"),
-            StatusCode::Conflict => warn!("Certificate already revoked"),
-            _ => return Err(ErrorKind::AcmeServerError(resp).into()),
-        }
-
-        Ok(self)
-    }
-
-
-    /// Makes a new post request, sigs payload and sends signed payload,
-    /// returns status code and Json object from reply
-    fn request<T: ToJson>(&self, resource: &str, payload: T) -> Result<(StatusCode, Json)> {
-        let mut json = payload.to_json();
-        json.as_object_mut().and_then(|obj| obj.insert("resource".to_owned(), resource.to_json()));
-        let jws = try!(self.jws(json));
-        let client = try!(Client::new());
-        let mut res = try!(client.post(&format!("{}/acme/{}", self.ca_server, resource))
-                           .body(&jws[..])
-                           .send());
-
-        let res_json = {
-            let mut res_content = String::new();
-            try!(res.read_to_string(&mut res_content));
-            if !res_content.is_empty() {
-                try!(Json::from_str(&res_content))
-            } else {
-                true.to_json()
-            }
-        };
-
-        Ok((*res.status(), res_json))
-    }
-
-
-    /// Makes a Flattened JSON Web Signature from payload
-    fn jws<T: ToJson>(&self, payload: T) -> Result<String> {
-        let pkey = try!(self.user_key.as_ref().ok_or("Key not found"));
-        let nonce = try!(self.get_nonce());
-        let mut data: BTreeMap<String, Json> = BTreeMap::new();
-
-        // header: 'alg': 'RS256', 'jwk': { e, n, kty }
-        let mut header: BTreeMap<String, Json> = BTreeMap::new();
-        header.insert("alg".to_owned(), "RS256".to_json());
-        header.insert("jwk".to_owned(), try!(self.jwk()));
-        data.insert("header".to_owned(), header.to_json());
-
-        // payload: b64 of payload
-        let payload64 = b64(try!(encode(&payload.to_json())).into_bytes());
-        data.insert("payload".to_owned(), payload64.to_json());
-
-        // protected: base64 of header + nonce
-        header.insert("nonce".to_owned(), nonce.to_json());
-        let protected64 = b64(try!(encode(&header)).into_bytes());
-        data.insert("protected".to_owned(), protected64.to_json());
-
-        // signature: b64 of hash of signature of {proctected64}.{payload64}
-        data.insert("signature".to_owned(), {
-            let mut signer = try!(Signer::new(MessageDigest::sha256(), &pkey));
-            try!(signer.update(&format!("{}.{}", protected64, payload64).into_bytes()));
-            b64(try!(signer.finish())).to_json()
-        });
-
-        let json_str = try!(encode(&data));
-        Ok(json_str)
-    }
-
-
-
-    /// Returns jwk field of jws header
-    fn jwk(&self) -> Result<Json> {
-        let rsa = try!(try!(self.user_key.as_ref().ok_or("Key not found")).rsa());
-        let mut jwk: BTreeMap<String, String> = BTreeMap::new();
-        jwk.insert("e".to_owned(), b64(try!(rsa.e().ok_or("e not found in RSA key")).to_vec()));
-        jwk.insert("kty".to_owned(), "RSA".to_owned());
-        jwk.insert("n".to_owned(), b64(try!(rsa.n().ok_or("n not found in RSA key")).to_vec()));
-        Ok(jwk.to_json())
-    }
-
-
-    fn get_nonce(&self) -> Result<String> {
-        let client = try!(Client::new());
-        let res = try!(client.get(&format!("{}/directory", self.ca_server)).send());
-        res.headers()
-            .get::<hyperx::ReplayNonce>()
-            .ok_or("Replay-Nonce header not found".into())
-            .and_then(|nonce| Ok(nonce.as_str().to_string()))
-    }
-}
-
-
-impl Drop for AcmeClient {
-    fn drop(&mut self) {
-        if let Some(path) = self.saved_challenge_path.as_ref() {
-            use std::fs::remove_file;
-            let _ = remove_file(path);
-        }
-    }
-}
-
-
-fn gen_key(bit_length: u32) -> Result<PKey> {
-    let rsa = try!(Rsa::generate(bit_length));
-    let key = try!(PKey::from_rsa(rsa));
+/// Generates a new PKey
+fn gen_key() -> Result<PKey> {
+    let rsa = Rsa::generate(BIT_LENGTH)?;
+    let key = PKey::from_rsa(rsa)?;
     Ok(key)
 }
 
 
-fn load_private_key<P: AsRef<Path>>(path: P) -> Result<PKey> {
-    let mut file = try!(File::open(path));
-    let mut content = Vec::new();
-    try!(file.read_to_end(&mut content));
-    let key = try!(PKey::private_key_from_pem(&content));
-    Ok(key)
-}
-
-
-fn pem_encode_key(key: &PKey, is_public: bool) -> Result<Vec<u8>> {
-    let key = try!(key.rsa());
-    let content = if is_public {
-        try!(key.public_key_to_pem())
-    } else {
-        try!(key.private_key_to_pem())
-    };
-    Ok(content)
-}
-
-
-fn save_key<P: AsRef<Path>>(key: &PKey, is_public: bool, path: P) -> Result<()> {
-    let content = try!(pem_encode_key(key, is_public));
-    let mut file = try!(File::create(path));
-    try!(file.write_all(&content));
-    Ok(())
-}
-
-
+/// Base 64 Encoding with URL and Filename Safe Alphabet
 fn b64(data: Vec<u8>) -> String {
     let config = base64::Config {
         char_set: base64::CharacterSet::UrlSafe,
@@ -854,233 +1039,135 @@ fn b64(data: Vec<u8>) -> String {
 }
 
 
-
-error_chain! {
-    types {
-        Error, ErrorKind, ChainErr, Result;
-    }
-
-    links {
-    }
-
-    foreign_links {
-        OpenSslErrorStack(openssl::error::ErrorStack);
-        IoError(io::Error);
-        HyperError(hyper::Error);
-        ReqwestError(reqwest::Error);
-        JsonEncoderError(rustc_serialize::json::EncoderError);
-        JsonParserError(rustc_serialize::json::ParserError);
-    }
-
-    errors {
-        AcmeServerError(resp: Json) {
-            description("Acme server error")
-                display("Acme server error: {}", acme_server_error_description(resp))
-        }
-    }
+/// An helper to read PKey from Path
+fn read_pkey<P: AsRef<Path>>(path: P) -> Result<PKey> {
+    let mut file = File::open(path)?;
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)?;
+    let key = PKey::private_key_from_pem(&content)?;
+    Ok(key)
 }
 
 
-fn acme_server_error_description(resp: &Json) -> String {
-    if let Some(obj) = resp.as_object() {
-        let t = obj.get("type").and_then(|t| t.as_string()).unwrap_or("");
-        let detail = obj.get("detail").and_then(|d| d.as_string()).unwrap_or("");
-        format!("{} {}", t, detail)
-    } else {
-        String::new()
+
+/// An helper to generate X509Req (CSR) from domain names
+///
+/// This function will generate a PKey and sign CSR with it.
+///
+/// Returns X509Req and PKey used to sign X509Req.
+fn gen_csr(pkey: &PKey, domains: &[&str]) -> Result<X509Req> {
+    if domains.is_empty() {
+        return Err("You need to supply at least one or more domain names".into());
     }
+
+    let mut builder = X509Req::builder()?;
+    let name = {
+        let mut name = X509Name::builder()?;
+        name.append_entry_by_text("CN", domains[0])?;
+        name.build()
+    };
+    builder.set_subject_name(&name)?;
+
+    // if more than one domain name is supplied
+    // add them as SubjectAlternativeName
+    if domains.len() > 1 {
+        let san_extension = {
+            let mut san = SubjectAlternativeName::new();
+            for domain in domains.iter() {
+                san.dns(domain);
+            }
+            san.build(&builder.x509v3_context(None))?
+        };
+        let mut stack = Stack::new()?;
+        stack.push(san_extension)?;
+        builder.add_extensions(&stack)?;
+    }
+
+    builder.set_pubkey(&pkey)?;
+    builder.sign(pkey, MessageDigest::sha256())?;
+
+    Ok(builder.build())
 }
+
+
 
 
 #[cfg(test)]
-/// Tests for AcmeClient
-///
-/// Ignored tests requires properly setup domain and a working HTTP server to validate domain
-/// ownership.
-///
-/// Ignored tests are using TEST_DOMAIN and TEST_PUBLIC_DIR environment variables.
 mod tests {
     extern crate env_logger;
-    use super::{AcmeClient, LETSENCRYPT_AGREEMENT};
-    use std::collections::BTreeMap;
-    use std::env;
-    use hyper::status::StatusCode;
+    use super::*;
 
-    // Use staging API in tests
-    const LETSENCRYPT_STAGING_CA_SERVER: &'static str = "https://acme-staging.api.letsencrypt.org";
+    const LETSENCRYPT_STAGING_DIRECTORY_URL: &'static str = "https://acme-staging.api.letsencrypt.\
+                                                             org/directory";
 
-    #[test]
-    fn test_gen_user_key() {
-        assert!(AcmeClient::new().and_then(|ac| ac.gen_user_key()).unwrap().user_key.is_some());
+    fn test_acc() -> Result<Account> {
+        Directory::from_url(LETSENCRYPT_STAGING_DIRECTORY_URL)
+            ?
+            .account_registration()
+            .pkey_from_file("tests/user.key")?
+            .register()
     }
 
-
     #[test]
-    fn test_gen_domain_key() {
-        assert!(AcmeClient::new().and_then(|ac| ac.gen_domain_key()).unwrap().domain_key.is_some());
+    fn test_gen_key() {
+        assert!(gen_key().is_ok())
     }
 
+    #[test]
+    fn test_b64() {
+        assert_eq!(b64("foobar".to_string().into_bytes()), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn test_read_pkey() {
+        assert!(read_pkey("tests/user.key").is_ok());
+    }
 
     #[test]
     fn test_gen_csr() {
-        assert!(AcmeClient::new()
-                .and_then(|ac| ac.set_domain("example.org"))
-                .and_then(|ac| ac.gen_csr())
-                .unwrap()
-                .domain_csr
-                .is_some());
+        let pkey = gen_key().unwrap();
+        assert!(gen_csr(&pkey, &["example.com"]).is_ok());
+        assert!(gen_csr(&pkey, &["example.com", "sub.example.com"]).is_ok());
     }
 
     #[test]
-    fn test_load_keys_and_csr() {
-        assert!(AcmeClient::default().load_user_key("tests/user.key").is_ok());
-        assert!(AcmeClient::default().load_domain_key("tests/domain.key").is_ok());
-        assert!(AcmeClient::default().load_csr("tests/domain.csr").is_ok());
+    fn test_directory() {
+        assert!(Directory::lets_encrypt().is_ok());
 
-        assert!(AcmeClient::default().load_user_key("tests/user.key").unwrap().user_key.is_some());
-        assert!(AcmeClient::default()
-                .load_domain_key("tests/domain.key")
-                .unwrap()
-                .domain_key
-                .is_some());
-        assert!(AcmeClient::default().load_csr("tests/domain.csr").unwrap().domain_csr.is_some());
+        let dir = Directory::from_url(LETSENCRYPT_STAGING_DIRECTORY_URL).unwrap();
+        assert!(dir.url_for("new-reg").is_some());
+        assert!(dir.url_for("new-authz").is_some());
+        assert!(dir.url_for("new-cert").is_some());
+
+        assert!(!dir.get_nonce().unwrap().is_empty());
+
+        let pkey = gen_key().unwrap();
+        assert!(dir.jwk(&pkey).is_ok());
+        assert!(dir.jws(&pkey, true).is_ok());
     }
 
     #[test]
-    fn test_get_user_private_key() {
-        let res = AcmeClient::default()
-            .set_domain("example.org")
-            .and_then(|ac| ac.gen_user_key()).ok()
-            .and_then(|ac| ac.get_user_private_key());
-
-        assert!(res.is_some());
-    }
-
-    #[test]
-    fn test_get_user_public_key() {
-        let res = AcmeClient::default()
-            .set_domain("example.org")
-            .and_then(|ac| ac.gen_user_key()).ok()
-            .and_then(|ac| ac.get_user_public_key());
-
-        assert!(res.is_some());
-    }
-
-    #[test]
-    fn test_get_domain_public_key() {
-        let res = AcmeClient::default()
-            .set_domain("example.org")
-            .and_then(|ac| ac.gen_domain_key())
-            .and_then(|ac| ac.gen_domain_key()).ok()
-            .and_then(|ac| ac.get_domain_public_key());
-
-        assert!(res.is_some());
-    }
-
-    #[test]
-    fn test_get_domain_private_key() {
-        let res = AcmeClient::default()
-            .set_domain("example.org")
-            .and_then(|ac| ac.gen_domain_key())
-            .and_then(|ac| ac.gen_domain_key()).ok()
-            .and_then(|ac| ac.get_domain_private_key());
-
-        assert!(res.is_some());
-    }
-
-    #[test]
-    fn test_save_keys() {
-        let res = AcmeClient::default()
-            .set_domain("example.org")
-            .and_then(|ac| ac.gen_user_key())
-            .and_then(|ac| ac.gen_domain_key())
-            .and_then(|ac| ac.save_user_private_key("user.key"))
-            .and_then(|ac| ac.gen_csr())
-            .and_then(|ac| ac.save_user_public_key("user.pub"))
-            .and_then(|ac| ac.save_domain_private_key("domain.key"))
-            .and_then(|ac| ac.save_domain_public_key("domain.pub"))
-            .and_then(|ac| ac.save_csr("domain.csr"));
-
-        assert!(res.is_ok());
-    }
-
-    #[test]
-    fn test_get_nonce() {
-        let ac = AcmeClient::default();
-        assert!(ac.get_nonce().is_ok());
-    }
-
-    #[test]
-    fn test_jws() {
-        let ac = AcmeClient::default().gen_user_key().unwrap();
-        let mut map = BTreeMap::new();
-        map.insert("resource".to_owned(), "new-reg".to_owned());
-        map.insert("aggreement".to_owned(), LETSENCRYPT_AGREEMENT.to_owned());
-        let jws = ac.jws(map);
-        assert!(jws.is_ok());
-    }
-
-    #[test]
-    fn test_request() {
+    fn test_account_registration() {
         let _ = env_logger::init();
-        let ac = AcmeClient::new()
-            .and_then(|ac| ac.set_ca_server(LETSENCRYPT_STAGING_CA_SERVER))
-            .and_then(|ac| ac.gen_user_key()).unwrap();
-        let mut map = BTreeMap::new();
-        map.insert("aggreement".to_owned(), LETSENCRYPT_AGREEMENT.to_owned());
-        let res = ac.request("new-reg", map);
-        assert!(res.is_ok());
-        let (status, _) = res.unwrap();
-
-        // new user registration must return 201
-        assert_eq!(status, StatusCode::Created);
+        let dir = Directory::from_url(LETSENCRYPT_STAGING_DIRECTORY_URL).unwrap();
+        assert!(dir.account_registration()
+                    .pkey_from_file("tests/user.key")
+                    .unwrap()
+                    .register()
+                    .is_ok());
     }
 
     #[test]
-    fn test_register_account() {
+    fn test_authorization() {
         let _ = env_logger::init();
-        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .and_then(|ac| ac.gen_user_key())
-                .and_then(|ac| ac.register_account(None))
-                .is_ok());
-        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .and_then(|ac| ac.gen_user_key())
-                .and_then(|ac| ac.register_account(Some("example@example.org"))).is_ok());
-        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .and_then(|ac| ac.gen_user_key())
-                .and_then(|ac| ac.register_account(None))
-                .and_then(|ac| ac.register_account(None)) // registration of already register_accounted user
-                .is_ok());
-    }
+        let account = test_acc().unwrap();
+        let auth = account.authorization("example.com").unwrap();
+        assert!(!auth.0.is_empty());
+        assert!(auth.get_challenge("http").is_some());
+        assert!(auth.get_http_challenge().is_some());
+        assert!(auth.get_dns_challenge().is_some());
 
-    #[test]
-    fn test_identify_domain() {
-        let _ = env_logger::init();
-        assert!(AcmeClient::default().set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .and_then(|ac| ac.gen_user_key())
-                .and_then(|ac| ac.set_domain("example.org"))
-                .and_then(|ac| ac.register_account(None))
-                .and_then(|ac| ac.identify_domain())
-                .is_ok());
-    }
-
-    #[test]
-    fn test_get_challenge() {
-        let _ = env_logger::init();
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.gen_user_key())
-            .and_then(|ac| ac.set_domain("example.org"))
-            .and_then(|ac| ac.register_account(None))
-            .and_then(|ac| ac.identify_domain())
-            .unwrap();
-
-        for pattern in ["http", "dns"].iter() {
-            let challenge = ac.get_challenge(pattern);
-            assert!(challenge.is_some());
-
-            let challenge = challenge.unwrap();
-
+        for challenge in auth.0 {
             assert!(!challenge.ctype.is_empty());
             assert!(!challenge.url.is_empty());
             assert!(!challenge.token.is_empty());
@@ -1088,159 +1175,22 @@ mod tests {
         }
     }
 
-
+    // This test requires properly configured domain name and a http server
+    // It will read TEST_DOMAIN and TEST_PUBLIC_DIR environment variables
     #[test]
-    fn test_save_http_challenge_into() {
-        let _ = env_logger::init();
-        assert!(AcmeClient::default()
-                .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .and_then(|ac| ac.gen_user_key())
-                .and_then(|ac| ac.set_domain("example.org"))
-                .and_then(|ac| ac.register_account(None))
-                .and_then(|ac| ac.identify_domain())
-                .and_then(|ac| ac.save_http_challenge_into("test"))
-                .is_ok());
-        use std::fs::remove_dir_all;
-        remove_dir_all("test").unwrap();
-    }
-
-
-    #[test]
-    fn test_get_dns_validation_signature() {
-        let _ = env_logger::init();
-        let ac = AcmeClient::default()
-                .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-                .and_then(|ac| ac.gen_user_key())
-                .and_then(|ac| ac.set_domain("example.org"))
-                .and_then(|ac| ac.register_account(None))
-                .and_then(|ac| ac.identify_domain())
-                .and_then(|mut ac| ac.get_dns_validation_signature());
-        assert!(ac.is_ok());
-        assert!(!ac.unwrap().is_empty())
-    }
-
-
     #[ignore]
-    #[test]
-    fn test_simple_http_validation() {
-        let _ = env_logger::init();
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.load_user_key("tests/user.key"))
-            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
-            .and_then(|ac| ac.register_account(None))
-            .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
-            .and_then(|ac| ac.simple_http_validation());
-
-        if let Err(e) = ac.as_ref() {
-            error!("{}", e);
-        }
-        assert!(ac.is_ok());
-    }
-
-
-    #[ignore]
-    #[test]
     fn test_sign_certificate() {
+        use std::env;
         let _ = env_logger::init();
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.load_user_key("tests/user.key"))
-            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
-            .and_then(|ac| ac.register_account(None))
-            .and_then(|ac| ac.gen_csr())
-            .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
-            .and_then(|ac| ac.simple_http_validation())
-            .and_then(|ac| ac.sign_certificate());
-
-        if let Err(e) = ac.as_ref() {
-            error!("{}", e);
-        }
-        assert!(ac.is_ok());
-    }
-
-
-    #[ignore]
-    #[test]
-    fn test_save_certificate_into() {
-        let _ = env_logger::init();
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.load_user_key("tests/user.key"))
-            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
-            .and_then(|ac| ac.register_account(None))
-            .and_then(|ac| ac.gen_csr())
-            .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
-            .and_then(|ac| ac.simple_http_validation())
-            .and_then(|ac| ac.sign_certificate())
-            .and_then(|ac| ac.save_signed_certificate("domain.crt"));
-
-        if let Err(e) = ac.as_ref() {
-            error!("{}", e);
-        }
-        assert!(ac.is_ok());
-    }
-
-    #[test]
-    #[ignore]
-    fn test_revoke_signed_certificate() {
-        let _ = env_logger::init();
-        // sign a certificate first
-        debug!("Signing a certificate");
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.load_user_key("tests/user.key"))
-            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
-            .and_then(|ac| ac.register_account(None))
-            .and_then(|ac| ac.gen_csr())
-            .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
-            .and_then(|ac| ac.simple_http_validation())
-            .and_then(|ac| ac.sign_certificate())
-            .and_then(|ac| ac.save_signed_certificate("domain.crt"));
-        if let Err(e) = ac.as_ref() {
-            error!("{}", e);
-        }
-        assert!(ac.is_ok());
-
-        // try to revoke signed certificate
-        debug!("Trying to revoke signed certificate");
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.load_user_key("tests/user.key"))
-            .and_then(|ac| ac.load_certificate("domain.crt"))
-            .and_then(|ac| ac.revoke_signed_certificate());
-
-        if let Err(e) = ac.as_ref() {
-            error!("{}", e);
-        }
-        assert!(ac.is_ok());
-    }
-
-    #[test]
-    #[ignore]
-    fn test_chain() {
-        let _ = env_logger::init();
-        let ac = AcmeClient::default()
-            .set_ca_server(LETSENCRYPT_STAGING_CA_SERVER)
-            .and_then(|ac| ac.load_user_key("tests/user.key"))
-            .and_then(|ac| ac.set_domain(&env::var("TEST_DOMAIN").unwrap()))
-            .and_then(|ac| ac.set_chain_url("https://letsencrypt.org/certs/\
-                                            lets-encrypt-x3-cross-signed.pem"))
-            .and_then(|ac| ac.register_account(Some("onur@onur.im")))
-            .and_then(|ac| ac.identify_domain())
-            .and_then(|ac| ac.save_http_challenge_into(&env::var("TEST_PUBLIC_DIR").unwrap()))
-            .and_then(|ac| ac.simple_http_validation())
-            .and_then(|ac| ac.sign_certificate())
-            .and_then(|ac| ac.save_domain_private_key("domain.key"))
-            .and_then(|ac| ac.save_signed_certificate("domain.crt"));
-
-        if let Err(e) = ac.as_ref() {
-            error!("{}", e);
-        }
-        assert!(ac.is_ok());
+        let account = test_acc().unwrap();
+        let auth = account.authorization(&env::var("TEST_DOMAIN").unwrap()).unwrap();
+        let http_challenge = auth.get_http_challenge().unwrap();
+        assert!(http_challenge.save_key_authorization(&env::var("TEST_PUBLIC_DIR").unwrap())
+                    .is_ok());
+        assert!(http_challenge.validate().is_ok());
+        let cert = account.certificate_signer(&[&env::var("TEST_DOMAIN").unwrap()])
+            .sign_certificate()
+            .unwrap();
+        account.revoke_certificate(cert.cert()).unwrap();
     }
 }
