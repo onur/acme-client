@@ -5,12 +5,13 @@ extern crate clap;
 extern crate env_logger;
 
 
-use acme_client::AcmeClient;
-use clap::{Arg, App, SubCommand};
+use std::io::{self, Write};
+use acme_client::Directory;
+use acme_client::error::Result;
+use clap::{Arg, App, SubCommand, ArgMatches};
 
 
 fn main() {
-    let _ = env_logger::init();
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -30,9 +31,10 @@ fn main() {
                 .long("domain-key")
                 .takes_value(true))
             .arg(Arg::with_name("DOMAIN")
-                .help("Name of domain for identification. This option is required.")
+                .help("Names of domain for identification. You can use more than one domain name.")
                 .short("D")
                 .long("domain")
+                .multiple(true)
                 .required(true)
                 .takes_value(true))
             .arg(Arg::with_name("PUBLIC_DIR")
@@ -70,11 +72,6 @@ fn main() {
                 .short("o")
                 .long("save-crt")
                 .takes_value(true))
-            .arg(Arg::with_name("BIT_LENGHT")
-                .help("Bit length for CSR. Default is 2048.")
-                .long("bit-length")
-                .short("B")
-                .takes_value(true))
             .arg(Arg::with_name("CHAIN")
                 .help("Chains the signed certificate with Let's Encrypt Authority X3 \
                        (IdenTrust cross-signed) intermediate certificate.")
@@ -102,97 +99,124 @@ fn main() {
                 .short("C")
                 .required(true)
                 .takes_value(true)))
+        .arg(Arg::with_name("verbose")
+             .help("Show verbose output")
+             .short("v")
+             .multiple(true))
         .get_matches();
 
+    init_logger(matches.occurrences_of("verbose"));
 
-    let mut ac = AcmeClient::new().expect("Failed to create new AcmeClient");
+    let res = if let Some(matches) = matches.subcommand_matches("sign") {
+        // TODO: remove unwrap
+        sign_certificate(matches)
+    } else if let Some(matches) = matches.subcommand_matches("revoke") {
+        revoke_certificate(matches)
+    } else {
+        Err(matches.usage().into())
+    };
 
-    // sign certificate
-    if let Some(matches) = matches.subcommand_matches("sign") {
+    if let Err(e) = res {
+        writeln!(io::stderr(), "{}", e).expect("Failed to write stderr");
+    }
+}
 
-        if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
-            ac = ac.load_csr(csr_path).expect("Failed to load CSR");
-        }
 
-        if let Some(domain) = matches.value_of("DOMAIN") {
-            ac = ac.set_domain(domain).expect("Failed to set domain")
-        }
 
-        if matches.is_present("CHAIN") {
-            ac = ac.set_chain_url("https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem")
-                .expect("Failed to set chain URL")
-        }
+fn sign_certificate(matches: &ArgMatches) -> Result<()> {
+    let directory = Directory::lets_encrypt()?;
 
-        if let Some(bit_length) = matches.value_of("BIT_LENGTH") {
-            ac = ac.set_bit_length(bit_length.parse().expect("Bit length must be a number"))
-                .expect("Failed to set bit lenght");
-        }
+    let mut account_registration = directory.account_registration();
 
-        if let Some(user_key_path) = matches.value_of("USER_KEY_PATH") {
-            ac = ac.load_user_key(user_key_path).expect("Failed to load user key");
-        }
+    if let Some(email) = matches.value_of("EMAIL") {
+        account_registration = account_registration.email(email);
+    }
 
-        if let Some(domain_key_path) = matches.value_of("DOMAIN_KEY_PATH") {
-            ac = ac.load_domain_key(domain_key_path).expect("Failed to load domain key");
-        }
+    if let Some(user_key_path) = matches.value_of("USER_KEY_PATH") {
+        account_registration = account_registration.pkey_from_file(user_key_path)?;
+    }
 
-        if let Some(domain_crt_path) = matches.value_of("DOMAIN_CRT") {
-            ac = ac.load_certificate(domain_crt_path)
-                .expect("Failed to load signed domain certificate");
-        }
-
-        ac = ac.register_account(matches.value_of("EMAIL"))
-            .and_then(|ac| ac.identify_domain())
-            .expect("Failed to identify domain");
-
-        // Use HTTP challenge if user is not requested DNS challenge
+    let account = account_registration.register()?;
+    let domains: Vec<_> = matches.values_of("DOMAIN")
+        .ok_or("You need to provide at least one domain name")?
+        .collect();
+    for domain in &domains {
+        let authorization = account.authorization(domain)?;
         if !matches.is_present("DNS_CHALLENGE") {
-            ac = ac.save_http_challenge_into(matches.value_of("PUBLIC_DIR")
-                                             .expect("--public-dir not defined. You need to \
-                                                     define a public directory to use http \
-                                                     challenge verification"))
-                .and_then(|ac| ac.simple_http_validation())
-                .and_then(|ac| ac.sign_certificate())
-                .expect("Failed to sign certificate");
+            let challenge = authorization.get_http_challenge().ok_or("HTTP challenge not found")?;
+            challenge.save_key_authorization(matches.value_of("PUBLIC_DIR")
+                                                 .ok_or("--public-dir not defined. \
+                                                            You need to define a public \
+                                                            directory to use http challenge \
+                                                            verification")?)?;
+            challenge.validate()?;
         } else {
-            // print challenge
-            print!("Please create a TXT record for _acme-challenge.{}: {}\n\
-                    Press enter to continue",
-                   ac.get_domain().unwrap(),
-                   ac.get_dns_validation_signature().unwrap());
-            ::std::io::stdin().read_line(&mut String::new()).unwrap();
-            ac = ac.dns_validation()
-                .and_then(|ac| ac.sign_certificate())
-                .expect("Failed to sign certificate");
+            let challenge = authorization.get_dns_challenge().ok_or("DNS challenge not found")?;
+            println!("Please create a TXT record for _acme-challenge.{}: {}\n\
+                      Press enter to continue",
+                     domain,
+                     challenge.signature()?);
+            io::stdin().read_line(&mut String::new()).unwrap();
+            challenge.validate()?;
         }
+    }
 
-        if let Some(path) = matches.value_of("SAVE_SIGNED_CERTIFICATE") {
-            ac = ac.save_signed_certificate(path).expect("Failed to save signed certificate");
+    let mut certificate_signer = account.certificate_signer(&domains);
+
+    if let Some(domain_key_path) = matches.value_of("DOMAIN_KEY_PATH") {
+        if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
+            certificate_signer = certificate_signer.csr_from_file(domain_key_path, csr_path)?;
         } else {
-            use std::io::stdout;
-            ac = ac.write_signed_certificate(&mut stdout())
-                .expect("Failed to write signed certificate");
+            certificate_signer = certificate_signer.pkey_from_file(domain_key_path)?;
         }
+    }
 
-        if let Some(path) = matches.value_of("SAVE_USER_KEY") {
-            ac = ac.save_user_private_key(path).expect("Failed to save user private key");
-        }
+    let certificate = certificate_signer.sign_certificate()?;
+    let signed_certificate_path = matches.value_of("SAVE_SIGNED_CERTIFICATE")
+        .ok_or("You need to save signed certificate")?;
+    if matches.is_present("CHAIN") {
+        certificate.save_signed_certificate_and_chain(None, signed_certificate_path)?;
+    } else {
+        certificate.save_signed_certificate(signed_certificate_path)?;
+    }
 
-        if let Some(path) = matches.value_of("SAVE_DOMAIN_KEY") {
-            ac.save_domain_private_key(path).expect("Failed to save domain private key");
-        }
+    if let Some(path) = matches.value_of("SAVE_DOMAIN_KEY") {
+        certificate.save_private_key(path)?;
     }
-    // revoke certificate
-    else if let Some(matches) = matches.subcommand_matches("revoke") {
-        ac = ac.load_user_key(matches.value_of("USER_KEY").unwrap())
-            .expect("Failed to load user key");
-        ac = ac.load_certificate(matches.value_of("SIGNED_CRT").unwrap())
-            .expect("Failed to load signed domain certificate");
-        ac.revoke_signed_certificate().expect("Failed to revoke certificate");
-        println!("Certificate successfully revoked!");
+    if let Some(path) = matches.value_of("SAVE_DOMAIN_CSR") {
+        certificate.save_csr(path)?;
     }
-    // if none of them matches, show usage
-    else {
-        println!("{}", matches.usage());
+    if let Some(path) = matches.value_of("SAVE_USER_KEY") {
+        account.save_private_key(path)?;
     }
+
+    Ok(())
+}
+
+
+fn revoke_certificate(matches: &ArgMatches) -> Result<()> {
+    let directory = Directory::lets_encrypt()?;
+    let account = directory.account_registration()
+        .pkey_from_file(matches.value_of("USER_KEY_PATH")
+                            .ok_or("You need to provide user \
+                                   or domain private key used \
+                                   to sign certificate.")?)?
+        .register()?;
+    account.revoke_certificate_from_file(matches.value_of("SIGNED_CRT")
+                                             .ok_or("You need to provide \
+                                                    a signed certificate to \
+                                                    revoke.")?)?;
+    Ok(())
+}
+
+
+fn init_logger(level: u64) {
+    let level = match level {
+        0 => "",
+        1 => "acme_client=info",
+        _ => "acme_client=debug",
+    };
+    let mut builder = env_logger::LogBuilder::new();
+    builder.parse(&::std::env::var("RUST_LOG").unwrap_or(level.to_owned()));
+    let _ = builder.init();
 }
