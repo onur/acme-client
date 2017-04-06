@@ -208,13 +208,13 @@
 //! cert.save_signed_certificate("certificate.pem").unwrap();
 //! cert.save_private_key("certificate.key").unwrap();
 //! ```
-//! 
+//!
 //! ## Revoking a signed certificate
-//! 
+//!
 //! You can use `revoke_certificate` or `revoke_signed_certificate` methods to revoke a signed
 //! certificate. You need to register with the same private key you registered before to
 //! successfully revoke a signed certificate. You can also use private key used to generate CSR.
-//! 
+//!
 //! ```rust,no_run
 //! # use acme_client::Directory;
 //! # let directory = Directory::lets_encrypt().unwrap();
