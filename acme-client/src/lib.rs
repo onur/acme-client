@@ -783,6 +783,12 @@ impl SignedCertificate {
         self.write_private_key(&mut file)
     }
 
+    /// Saves CSR used to sign certificateto to a file
+    pub fn save_csr<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let mut file = File::create(path)?;
+        self.write_csr(&mut file)
+    }
+
     /// Writes signed certificate to writer.
     pub fn write_signed_certificate<W: Write>(&self, mut writer: &mut W) -> Result<()> {
         writer.write_all(&self.cert.to_pem()?)?;
@@ -816,6 +822,11 @@ impl SignedCertificate {
     /// Writes private key used to sign certificate to a writer
     pub fn write_private_key<W: Write>(&self, mut writer: &mut W) -> Result<()> {
         Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
+    }
+
+    /// Writes CSR used to sign certificateto a writer
+    pub fn write_csr<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+        Ok(writer.write_all(&self.csr().to_pem()?)?)
     }
 
     /// Returns reference to certificate
