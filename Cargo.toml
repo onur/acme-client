@@ -1,14 +1,2 @@
-[package]
-name = "letsencrypt-rs"
-description = "Easy to use Let's Encrypt client to issue, renew and revoke TLS certificates"
-version = "0.2.0"
-authors = ["Onur Aslan <onur@onur.im>"]
-license = "MIT"
-keywords = ["letsencrypt", "acme"]
-readme = "README.md"
-repository = "https://github.com/onur/letsencrypt-rs"
-
-[dependencies]
-acme-client = { version = "0.4", path = "acme-client" }
-clap = "2"
-env_logger = "0.4"
+[workspace]
+members = ["letsencrypt-rs", "acme-client"]
