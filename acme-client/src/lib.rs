@@ -329,12 +329,15 @@ pub struct Authorization<'a>(Vec<Challenge<'a>>);
 
 
 impl Directory {
-    /// Creates a Directory from `LETSENCRYPT_DIRECTORY_URL`.
+    /// Creates a Directory from
+    /// [`LETSENCRYPT_DIRECTORY_URL`](constant.LETSENCRYPT_DIRECTORY_URL.html).
     pub fn lets_encrypt() -> Result<Directory> {
         Directory::from_url(LETSENCRYPT_DIRECTORY_URL)
     }
 
     /// Creates a Directory from directory URL.
+    /// 
+    /// Example directory for testing `acme-client` crate with staging API:
     ///
     /// ```rust
     /// use acme_client::Directory;
@@ -623,8 +626,9 @@ impl AccountRegistration {
         self
     }
 
-    /// Sets agreement url, `LETSENCRYPT_AGREEMENT_URL` will be used during registration
-    /// if it's not set.
+    /// Sets agreement url,
+    /// [`LETSENCRYPT_AGREEMENT_URL`](acme_client/constant.LETSENCRYPT_AGREEMENT_URL.html)
+    /// will be used during registration if it's not set.
     pub fn agreement(mut self, url: &str) -> AccountRegistration {
         self.agreement = Some(url.to_owned());
         self
@@ -766,7 +770,7 @@ impl SignedCertificate {
     /// Saves intermediate certificate and signed certificate to a file
     ///
     /// You can additionally provide intermediate certificate url, by default it will use
-    /// `LETSENCRYPT_INTERMEDIATE_CERT_URL`.
+    /// [`LETSENCRYPT_INTERMEDIATE_CERT_URL`](constant.LETSENCRYPT_INTERMEDIATE_CERT_URL.html).
     pub fn save_signed_certificate_and_chain<P: AsRef<Path>>(&self,
                                                              url: Option<&str>,
                                                              path: P)
