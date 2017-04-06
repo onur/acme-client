@@ -767,13 +767,13 @@ impl SignedCertificate {
     ///
     /// You can additionally provide intermediate certificate url, by default it will use
     /// `LETSENCRYPT_INTERMEDIATE_CERT_URL`.
-    pub fn save_signed_certificate_chain<P: AsRef<Path>>(&self,
-                                                         url: Option<&str>,
-                                                         path: P)
-                                                         -> Result<()> {
+    pub fn save_signed_certificate_and_chain<P: AsRef<Path>>(&self,
+                                                             url: Option<&str>,
+                                                             path: P)
+                                                             -> Result<()> {
         let mut file = File::create(path)?;
-        self.write_intermediate_certificate(url, &mut file)?;
         self.write_signed_certificate(&mut file)?;
+        self.write_intermediate_certificate(url, &mut file)?;
         Ok(())
     }
 
