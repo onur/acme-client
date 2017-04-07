@@ -2,4 +2,4 @@ language: rust
 rust:
   - stable
   - nightly
-script: cargo build --verbose && cd acme-client && cargo build --verbose && cargo test --verbose
+script: cargo build --verbose --all && cargo test --verbose --all
