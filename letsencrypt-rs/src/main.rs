@@ -31,7 +31,7 @@ fn main() {
                 .long("domain-key")
                 .takes_value(true))
             .arg(Arg::with_name("DOMAIN")
-                .help("Names of domain for identification. You can use more than one domain name.")
+                .help("Domain name to obtain certificate. You can use more than one domain name.")
                 .short("D")
                 .long("domain")
                 .multiple(true)

@@ -106,7 +106,7 @@ FLAGS:
 
 OPTIONS:
     -D, --domain <DOMAIN>...
-            Names of domain for identification. You can use more than one domain name.
+            Domain name to obtain certificate. You can use more than one domain name.
     -C, --domain-csr <DOMAIN_CSR>
             Path to domain certificate signing request.
     -K, --domain-key <DOMAIN_KEY_PATH>
