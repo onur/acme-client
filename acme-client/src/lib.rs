@@ -888,6 +888,11 @@ impl<'a> Authorization<'a> {
     pub fn get_dns_challenge(&self) -> Option<&Challenge> {
         self.get_challenge("dns")
     }
+
+    /// Gets tls-sni challenge
+    pub fn get_tls_sni_challenge(&self) -> Option<&Challenge> {
+        self.get_challenge("tls-sni")
+    }
 }
 
 
@@ -1193,6 +1198,7 @@ mod tests {
         assert!(auth.get_challenge("http").is_some());
         assert!(auth.get_http_challenge().is_some());
         assert!(auth.get_dns_challenge().is_some());
+        assert!(auth.get_tls_sni_challenge().is_some());
 
         for challenge in auth.0 {
             assert!(!challenge.ctype.is_empty());
