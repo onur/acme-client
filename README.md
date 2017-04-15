@@ -216,14 +216,15 @@ Contact email address is optional. You can also use your own private key during
 registration. See [AccountRegistration](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html) helper for more
 details.
 
-If you already registed with your own keys before, you still need to use `register` method,
+If you already registed with your own keys before, you still need to use 
+[`register`](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html#method.register) method,
 in this case it will identify your user account instead of creating a new one.
 
 
 ## Identifying ownership of domain name
 
 Before sending a certificate signing request to an ACME server, you need to identify ownership
-of domain names in order to to sign a certificate. To do that you need to create an
+of domain names you want to sign a certificate for. To do that you need to create an
 Authorization object for a domain name and fulfill at least one challenge (http or dns for
 Let's Encrypt).
 
@@ -233,7 +234,8 @@ To create an Authorization object for a domain:
 let authorization = account.authorization("example.com").unwrap();
 ```
 
-Authorization object will contain challenges created by ACME server. You can create as many
+[Authorization](https://docs.rs/acme-client/0.4/acme_client/struct.Authorization.html)
+object will contain challenges created by ACME server. You can create as many
 Authorization object as you want to verifiy ownership of the domain names. For example
 if you want to sign a certificate for `example.com` and `example.org`:
 
