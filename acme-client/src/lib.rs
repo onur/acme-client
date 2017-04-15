@@ -229,7 +229,7 @@
 //! ## References
 //!
 //! * [IETF ACME draft](https://tools.ietf.org/html/draft-ietf-acme-acme-05)
-//! * [Let's Encrypt ACME divergences](https://github.com/letsencrypt/boulder/blob/master/docs/acme-divergences.md)
+//! * [Let's Encrypt ACME divergences](https://github.com/letsencrypt/boulder/blob/9c1e8e6764c1de195db6467057e0d148608e411d/docs/acme-divergences.md)
 
 pub extern crate openssl;
 #[macro_use]
