@@ -67,14 +67,15 @@
 //! registration. See [AccountRegistration](struct.AccountRegistration.html) helper for more
 //! details.
 //!
-//! If you already registed with your own keys before, you still need to use `register` method,
+//! If you already registed with your own keys before, you still need to use
+//! [`register`](struct.AccountRegistration.html#method.register) method,
 //! in this case it will identify your user account instead of creating a new one.
 //!
 //!
 //! ## Identifying ownership of domain name
 //!
 //! Before sending a certificate signing request to an ACME server, you need to identify ownership
-//! of domain names in order to to sign a certificate. To do that you need to create an
+//! of domain names you want to sign a certificate for. To do that you need to create an
 //! Authorization object for a domain name and fulfill at least one challenge (http or dns for
 //! Let's Encrypt).
 //!
@@ -90,9 +91,10 @@
 //! let authorization = account.authorization("example.com").unwrap();
 //! ```
 //!
-//! Authorization object will contain challenges created by ACME server. You can create as many
-//! Authorization object as you want to verifiy ownership of the domain names. For example
-//! if you want to sign a certificate for `example.com` and `example.org`:
+//! [Authorization](struct.Authorization.html) object will contain challenges created by
+//! ACME server. You can create as many Authorization object as you want to verifiy ownership
+//! of the domain names. For example if you want to sign a certificate for
+//! `example.com` and `example.org`:
 //!
 //! ```rust,no_run
 //! # use acme_client::Directory;
@@ -349,7 +351,7 @@ impl Directory {
     }
 
     /// Creates a Directory from directory URL.
-    /// 
+    ///
     /// Example directory for testing `acme-client` crate with staging API:
     ///
     /// ```rust
@@ -640,7 +642,7 @@ impl AccountRegistration {
     }
 
     /// Sets agreement url,
-    /// [`LETSENCRYPT_AGREEMENT_URL`](acme_client/constant.LETSENCRYPT_AGREEMENT_URL.html)
+    /// [`LETSENCRYPT_AGREEMENT_URL`](constant.LETSENCRYPT_AGREEMENT_URL.html)
     /// will be used during registration if it's not set.
     pub fn agreement(mut self, url: &str) -> AccountRegistration {
         self.agreement = Some(url.to_owned());
@@ -815,7 +817,7 @@ impl SignedCertificate {
     /// Writes intermediate certificate to writer.
     ///
     /// You can additionally provide intermediate certificate url, by default it will use
-    /// `LETSENCRYPT_INTERMEDIATE_CERT_URL`.
+    /// [`LETSENCRYPT_INTERMEDIATE_CERT_URL`](constant.LETSENCRYPT_INTERMEDIATE_CERT_URL.html).
     pub fn write_intermediate_certificate<W: Write>(&self,
                                                     url: Option<&str>,
                                                     mut writer: &mut W)
@@ -827,7 +829,8 @@ impl SignedCertificate {
 
     /// Gets intermediate certificate from url.
     ///
-    /// `LETSENCRYPT_INTERMEDIATE_CERT_URL` will be used if url is None.
+    /// [`LETSENCRYPT_INTERMEDIATE_CERT_URL`](constant.LETSENCRYPT_INTERMEDIATE_CERT_URL.html).
+    /// will be used if url is None.
     fn get_intermediate_certificate(&self, url: Option<&str>) -> Result<X509> {
         let client = Client::new()?;
         let mut res = client.get(url.unwrap_or(LETSENCRYPT_INTERMEDIATE_CERT_URL)).send()?;
