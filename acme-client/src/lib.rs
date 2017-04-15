@@ -327,6 +327,19 @@ pub struct SignedCertificate {
 pub struct Authorization<'a>(Vec<Challenge<'a>>);
 
 
+/// A verification challenge
+pub struct Challenge<'a> {
+    account: &'a Account,
+    /// Type of verification challenge. Usually `http-01`, `dns-01` for letsencrypt.
+    ctype: String,
+    /// URL to trigger challenge.
+    url: String,
+    /// Challenge token.
+    token: String,
+    /// Key authorization.
+    key_authorization: String,
+}
+
 
 impl Directory {
     /// Creates a Directory from
@@ -875,20 +888,6 @@ impl<'a> Authorization<'a> {
 }
 
 
-/// A verification challenge
-pub struct Challenge<'a> {
-    account: &'a Account,
-    /// Type of verification challenge. Usually `http-01`, `dns-01` for letsencrypt.
-    ctype: String,
-    /// URL to trigger challenge.
-    url: String,
-    /// Challenge token.
-    token: String,
-    /// Key authorization.
-    key_authorization: String,
-}
-
-
 impl<'a> Challenge<'a> {
     /// Saves key authorization into `{path}/.well-known/acme-challenge/{token}` for http challenge.
     pub fn save_key_authorization<P: AsRef<Path>>(&self, path: P) -> Result<()> {
@@ -914,7 +913,17 @@ impl<'a> Challenge<'a> {
 
     /// Returns challenge type, usually `http-01` or `dns-01` for Let's Encrypt.
     pub fn ctype(&self) -> &str {
-        &self.ctype[..]
+        &self.ctype
+    }
+
+    /// Returns challenge token
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
+    /// Returns key_authorization
+    pub fn key_authorization(&self) -> &str {
+        &self.key_authorization
     }
 
     /// Triggers validation.
