@@ -8,6 +8,28 @@
 Easy to use Let's Encrypt client and acme client library to issue, renew and
 revoke TLS certificates.
 
+**Contents**
+
+   * [letsencrypt-rs](#letsencrypt-rs)
+      * [Installation](#installation)
+      * [Usage](#usage)
+         * [Sign a certificate](#sign-a-certificate)
+         * [Using your own keys and CSR](#using-your-own-keys-and-csr)
+         * [Using DNS validation](#using-dns-validation)
+         * [Revoking a signed certificate](#revoking-a-signed-certificate)
+      * [Options](#options)
+   * [acme-client crate](#acme-client-crate)
+      * [API overview](#api-overview)
+      * [Account registration](#account-registration)
+      * [Identifying ownership of domain name](#identifying-ownership-of-domain-name)
+         * [Identifier validation challenges](#identifier-validation-challenges)
+            * [HTTP challenge](#http-challenge)
+            * [DNS challenge:](#dns-challenge)
+      * [Signing a certificate](#signing-a-certificate)
+      * [Revoking a signed certificate](#revoking-a-signed-certificate-1)
+      * [References](#references)
+
+
 ## Installation
 
 You can install letsencrypt-rs with:
@@ -90,7 +112,7 @@ and `letsencrypt-rs revoke --help`:
 
 ```
 $ letsencrypt-rs sign --help
-letsencrypt-rs-sign 
+letsencrypt-rs-sign
 Signs a certificate
 
 USAGE:
@@ -130,7 +152,7 @@ OPTIONS:
 
 ```
 $ letsencrypt-rs revoke --help
-letsencrypt-rs-revoke 
+letsencrypt-rs-revoke
 Revokes a signed certificate
 
 USAGE:
@@ -163,20 +185,20 @@ otherwise this library will generate them. Basic usage of `acme-client`:
 ```rust,no_run
 use acme_client::Directory;
 
-let directory = Directory::lets_encrypt().unwrap();
-let account = directory.account_registration().register().unwrap();
+let directory = Directory::lets_encrypt()?;
+let account = directory.account_registration().register()?;
 
 // Create a identifier authorization for example.com
-let authorization = account.authorization("example.com").unwrap();
+let authorization = account.authorization("example.com")?;
 
 // Validate ownership of example.com with http challenge
-let http_challenge = authorization.get_http_challenge().unwrap();
-http_challenge.save_key_authorization("/var/www").unwrap();
-http_challenge.validate().unwrap();
+let http_challenge = authorization.get_http_challenge().ok_or("HTTP challenge not found")?;
+http_challenge.save_key_authorization("/var/www")?;
+http_challenge.validate()?;
 
-let cert = account.certificate_signer(&["example.com"]).sign_certificate().unwrap();
-cert.save_signed_certificate("certificate.pem").unwrap();
-cert.save_private_key("certificate.key").unwrap();
+let cert = account.certificate_signer(&["example.com"]).sign_certificate()?;
+cert.save_signed_certificate("certificate.pem")?;
+cert.save_private_key("certificate.key")?;
 ```
 
 `acme-client` supports signing a certificate for multiple domain names with SAN. You need to
@@ -185,19 +207,19 @@ validate ownership of each domain name:
 ```rust,no_run
 use acme_client::Directory;
 
-let directory = Directory::lets_encrypt().unwrap();
-let account = directory.account_registration().register().unwrap();
+let directory = Directory::lets_encrypt()?;
+let account = directory.account_registration().register()?;
 
 let domains = ["example.com", "example.org"];
 
 for domain in domains.iter() {
-    let authorization = account.authorization(domain).unwrap();
+    let authorization = account.authorization(domain)?;
     // ...
 }
 
-let cert = account.certificate_signer(&domains).sign_certificate().unwrap();
-cert.save_signed_certificate("certificate.pem").unwrap();
-cert.save_private_key("certificate.key").unwrap();
+let cert = account.certificate_signer(&domains).sign_certificate()?;
+cert.save_signed_certificate("certificate.pem")?;
+cert.save_private_key("certificate.key")?;
 ```
 
 ## Account registration
@@ -205,18 +227,17 @@ cert.save_private_key("certificate.key").unwrap();
 ```rust,no_run
 use acme_client::Directory;
 
-let directory = Directory::lets_encrypt().unwrap();
+let directory = Directory::lets_encrypt()?;
 let account = directory.account_registration()
                        .email("example@example.org")
-                       .register()
-                       .unwrap();
+                       .register()?;
 ```
 
 Contact email address is optional. You can also use your own private key during
 registration. See [AccountRegistration](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html) helper for more
 details.
 
-If you already registed with your own keys before, you still need to use 
+If you already registed with your own keys before, you still need to use
 [`register`](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html#method.register) method,
 in this case it will identify your user account instead of creating a new one.
 
@@ -231,7 +252,7 @@ Let's Encrypt).
 To create an Authorization object for a domain:
 
 ```rust,no_run
-let authorization = account.authorization("example.com").unwrap();
+let authorization = account.authorization("example.com")?;
 ```
 
 [Authorization](https://docs.rs/acme-client/0.4/acme_client/struct.Authorization.html)
@@ -242,7 +263,7 @@ if you want to sign a certificate for `example.com` and `example.org`:
 ```rust,no_run
 let domains = ["example.com", "example.org"];
 for domain in domains.iter() {
-    let authorization = account.authorization(domain).unwrap();
+    let authorization = account.authorization(domain)?;
     // ...
 }
 ```
@@ -265,15 +286,15 @@ to save vaditation file to a public directory. This directory must be accessible
 world.
 
 ```rust,no_run
-let authorization = account.authorization("example.com").unwrap();
-let http_challenge = authorization.get_http_challenge().unwrap();
+let authorization = account.authorization("example.com")?;
+let http_challenge = authorization.get_http_challenge().ok_or("HTTP challenge not found")?;
 
 // This method will save key authorization into
 // /var/www/.well-known/acme-challenge/ directory.
-http_challenge.save_key_authorization("/var/www").unwrap();
+http_challenge.save_key_authorization("/var/www")?;
 
 // Validate ownership of example.com with http challenge
-http_challenge.validate().unwrap();
+http_challenge.validate()?;
 ```
 
 During validation, ACME server will check
@@ -300,14 +321,14 @@ _acme-challenge.example.com: dns_challenge.signature()
 Example validation with DNS challenge:
 
 ```rust,no_run
-let authorization = account.authorization("example.com").unwrap();
-let dns_challenge = authorization.get_dns_challenge().unwrap();
-let signature = dns_challenge.signature().unwrap();
+let authorization = account.authorization("example.com")?;
+let dns_challenge = authorization.get_dns_challenge().ok_or("DNS challenge not found")?;
+let signature = dns_challenge.signature()?;
 
 // User creates a TXT record for _acme-challenge.example.com with the value of signature.
 
 // Validate ownership of example.com with DNS challenge
-dns_challenge.validate().unwrap();
+dns_challenge.validate()?;
 ```
 
 ## Signing a certificate
@@ -322,9 +343,9 @@ let domains = ["example.com", "example.org"];
 // ... validate ownership of domain names
 
 let certificate_signer = account.certificate_signer(&domains);
-let cert = certificate_signer.sign_certificate().unwrap();
-cert.save_signed_certificate("certificate.pem").unwrap();
-cert.save_private_key("certificate.key").unwrap();
+let cert = certificate_signer.sign_certificate()?;
+cert.save_signed_certificate("certificate.pem")?;
+cert.save_private_key("certificate.key")?;
 ```
 
 ## Revoking a signed certificate
@@ -335,9 +356,9 @@ successfully revoke a signed certificate. You can also use private key used to g
 
 ```rust,no_run
 let account = directory.account_registration()
-                       .pkey_from_file("user.key").unwrap()
-                       .register().unwrap();
-account.revoke_certificate_from_file("certificate.pem").unwrap();
+                       .pkey_from_file("user.key")?
+                       .register()?;
+account.revoke_certificate_from_file("certificate.pem")?;
 ```
 
 ## References
