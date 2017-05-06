@@ -8,6 +8,28 @@
 Easy to use Let's Encrypt client and acme client library to issue, renew and
 revoke TLS certificates.
 
+**Contents**
+
+   * [letsencrypt-rs](#letsencrypt-rs)
+      * [Installation](#installation)
+      * [Usage](#usage)
+         * [Sign a certificate](#sign-a-certificate)
+         * [Using your own keys and CSR](#using-your-own-keys-and-csr)
+         * [Using DNS validation](#using-dns-validation)
+         * [Revoking a signed certificate](#revoking-a-signed-certificate)
+      * [Options](#options)
+   * [acme-client crate](#acme-client-crate)
+      * [API overview](#api-overview)
+      * [Account registration](#account-registration)
+      * [Identifying ownership of domain name](#identifying-ownership-of-domain-name)
+         * [Identifier validation challenges](#identifier-validation-challenges)
+            * [HTTP challenge](#http-challenge)
+            * [DNS challenge:](#dns-challenge)
+      * [Signing a certificate](#signing-a-certificate)
+      * [Revoking a signed certificate](#revoking-a-signed-certificate-1)
+      * [References](#references)
+
+
 ## Installation
 
 You can install letsencrypt-rs with:
@@ -90,7 +112,7 @@ and `letsencrypt-rs revoke --help`:
 
 ```
 $ letsencrypt-rs sign --help
-letsencrypt-rs-sign 
+letsencrypt-rs-sign
 Signs a certificate
 
 USAGE:
@@ -130,7 +152,7 @@ OPTIONS:
 
 ```
 $ letsencrypt-rs revoke --help
-letsencrypt-rs-revoke 
+letsencrypt-rs-revoke
 Revokes a signed certificate
 
 USAGE:
@@ -215,7 +237,7 @@ Contact email address is optional. You can also use your own private key during
 registration. See [AccountRegistration](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html) helper for more
 details.
 
-If you already registed with your own keys before, you still need to use 
+If you already registed with your own keys before, you still need to use
 [`register`](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html#method.register) method,
 in this case it will identify your user account instead of creating a new one.
 
