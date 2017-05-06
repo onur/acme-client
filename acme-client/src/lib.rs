@@ -9,58 +9,66 @@
 //! otherwise this library will generate them. Basic usage of `acme-client`:
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! use acme_client::Directory;
 //!
-//! let directory = Directory::lets_encrypt().unwrap();
-//! let account = directory.account_registration().register().unwrap();
+//! let directory = Directory::lets_encrypt()?;
+//! let account = directory.account_registration().register()?;
 //!
 //! // Create a identifier authorization for example.com
-//! let authorization = account.authorization("example.com").unwrap();
+//! let authorization = account.authorization("example.com")?;
 //!
 //! // Validate ownership of example.com with http challenge
-//! let http_challenge = authorization.get_http_challenge().unwrap();
-//! http_challenge.save_key_authorization("/var/www").unwrap();
-//! http_challenge.validate().unwrap();
+//! let http_challenge = authorization.get_http_challenge().ok_or("HTTP challenge not found")?;
+//! http_challenge.save_key_authorization("/var/www")?;
+//! http_challenge.validate()?;
 //!
-//! let cert = account.certificate_signer(&["example.com"]).sign_certificate().unwrap();
-//! cert.save_signed_certificate("certificate.pem").unwrap();
-//! cert.save_private_key("certificate.key").unwrap();
+//! let cert = account.certificate_signer(&["example.com"]).sign_certificate()?;
+//! cert.save_signed_certificate("certificate.pem")?;
+//! cert.save_private_key("certificate.key")?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! `acme-client` supports signing a certificate for multiple domain names with SAN. You need to
 //! validate ownership of each domain name:
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! use acme_client::Directory;
 //!
-//! let directory = Directory::lets_encrypt().unwrap();
-//! let account = directory.account_registration().register().unwrap();
+//! let directory = Directory::lets_encrypt()?;
+//! let account = directory.account_registration().register()?;
 //!
 //! let domains = ["example.com", "example.org"];
 //!
 //! for domain in domains.iter() {
-//!     let authorization = account.authorization(domain).unwrap();
+//!     let authorization = account.authorization(domain)?;
 //!     // ...
 //! }
 //!
-//! let cert = account.certificate_signer(&domains).sign_certificate().unwrap();
-//! cert.save_signed_certificate("certificate.pem").unwrap();
-//! cert.save_private_key("certificate.key").unwrap();
+//! let cert = account.certificate_signer(&domains).sign_certificate()?;
+//! cert.save_signed_certificate("certificate.pem")?;
+//! cert.save_private_key("certificate.key")?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! ## Account registration
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! use acme_client::Directory;
 //!
-//! let directory = Directory::lets_encrypt().unwrap();
-//! # // Use staging directory for doc test
-//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
-//! #   .unwrap();
+//! let directory = Directory::lets_encrypt()?;
 //! let account = directory.account_registration()
 //!                        .email("example@example.org")
-//!                        .register()
-//!                        .unwrap();
+//!                        .register()?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! Contact email address is optional. You can also use your own private key during
@@ -82,13 +90,17 @@
 //! To create an Authorization object for a domain:
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! # use acme_client::Directory;
 //! # let directory = Directory::lets_encrypt().unwrap();
 //! # // Use staging directory for doc test
 //! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
 //! #   .unwrap();
 //! # let account = directory.account_registration().register().unwrap();
-//! let authorization = account.authorization("example.com").unwrap();
+//! let authorization = account.authorization("example.com")?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! [Authorization](struct.Authorization.html) object will contain challenges created by
@@ -97,17 +109,18 @@
 //! `example.com` and `example.org`:
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! # use acme_client::Directory;
 //! # let directory = Directory::lets_encrypt().unwrap();
-//! # // Use staging directory for doc test
-//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
-//! #   .unwrap();
 //! # let account = directory.account_registration().register().unwrap();
 //! let domains = ["example.com", "example.org"];
 //! for domain in domains.iter() {
-//!     let authorization = account.authorization(domain).unwrap();
+//!     let authorization = account.authorization(domain)?;
 //!     // ...
 //! }
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! ### Identifier validation challenges
@@ -128,24 +141,24 @@
 //! world.
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! # use acme_client::Directory;
-//! # let directory = Directory::lets_encrypt().unwrap();
-//! # // Use staging directory for doc test
-//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
-//! #   .unwrap();
+//! # let directory = Directory::lets_encrypt()?;
 //! # let account = directory.account_registration()
-//! #                        .pkey_from_file("tests/user.key").unwrap() // use test key for doc test
-//! #                        .register()
-//! #                        .unwrap();
-//! let authorization = account.authorization("example.com").unwrap();
-//! let http_challenge = authorization.get_http_challenge().unwrap();
+//! #                        .pkey_from_file("tests/user.key")?  // use test key for doc test
+//! #                        .register()?;
+//! let authorization = account.authorization("example.com")?;
+//! let http_challenge = authorization.get_http_challenge().ok_or("HTTP challenge not found")?;
 //!
 //! // This method will save key authorization into
 //! // /var/www/.well-known/acme-challenge/ directory.
-//! http_challenge.save_key_authorization("/var/www").unwrap();
+//! http_challenge.save_key_authorization("/var/www")?;
 //!
 //! // Validate ownership of example.com with http challenge
-//! http_challenge.validate().unwrap();
+//! http_challenge.validate()?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! During validation, ACME server will check
@@ -172,23 +185,23 @@
 //! Example validation with DNS challenge:
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! # use acme_client::Directory;
-//! # let directory = Directory::lets_encrypt().unwrap();
-//! # // Use staging directory for doc test
-//! # let directory = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
-//! #   .unwrap();
+//! # let directory = Directory::lets_encrypt()?;
 //! # let account = directory.account_registration()
-//! #                        .pkey_from_file("tests/user.key").unwrap() // use test key for doc test
-//! #                        .register()
-//! #                        .unwrap();
-//! let authorization = account.authorization("example.com").unwrap();
-//! let dns_challenge = authorization.get_dns_challenge().unwrap();
-//! let signature = dns_challenge.signature().unwrap();
+//! #                        .pkey_from_file("tests/user.key")?  // use test key for doc test
+//! #                        .register()?;
+//! let authorization = account.authorization("example.com")?;
+//! let dns_challenge = authorization.get_dns_challenge().ok_or("DNS challenge not found")?;
+//! let signature = dns_challenge.signature()?;
 //!
 //! // User creates a TXT record for _acme-challenge.example.com with the value of signature.
 //!
 //! // Validate ownership of example.com with DNS challenge
-//! dns_challenge.validate().unwrap();
+//! dns_challenge.validate()?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! ## Signing a certificate
@@ -198,17 +211,21 @@
 //! use your own key and CSR or you can let `CertificateSigner` to generate them for you.
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! # use acme_client::Directory;
-//! # let directory = Directory::lets_encrypt().unwrap();
-//! # let account = directory.account_registration().register().unwrap();
+//! # let directory = Directory::lets_encrypt()?;
+//! # let account = directory.account_registration().register()?;
 //! let domains = ["example.com", "example.org"];
 //!
 //! // ... validate ownership of domain names
 //!
 //! let certificate_signer = account.certificate_signer(&domains);
-//! let cert = certificate_signer.sign_certificate().unwrap();
-//! cert.save_signed_certificate("certificate.pem").unwrap();
-//! cert.save_private_key("certificate.key").unwrap();
+//! let cert = certificate_signer.sign_certificate()?;
+//! cert.save_signed_certificate("certificate.pem")?;
+//! cert.save_private_key("certificate.key")?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! ## Revoking a signed certificate
@@ -218,12 +235,16 @@
 //! successfully revoke a signed certificate. You can also use private key used to generate CSR.
 //!
 //! ```rust,no_run
+//! # use acme_client::error::Result;
+//! # fn try_main() -> Result<()> {
 //! # use acme_client::Directory;
-//! # let directory = Directory::lets_encrypt().unwrap();
+//! # let directory = Directory::lets_encrypt()?;
 //! let account = directory.account_registration()
-//!                        .pkey_from_file("user.key").unwrap()
-//!                        .register().unwrap();
-//! account.revoke_certificate_from_file("certificate.pem").unwrap();
+//!                        .pkey_from_file("user.key")?
+//!                        .register()?;
+//! account.revoke_certificate_from_file("certificate.pem")?;
+//! # Ok(()) }
+//! # fn main () { try_main().unwrap(); }
 //! ```
 //!
 //! ## References
@@ -355,9 +376,12 @@ impl Directory {
     /// Example directory for testing `acme-client` crate with staging API:
     ///
     /// ```rust
+    /// # use acme_client::error::Result;
+    /// # fn try_main() -> Result<()> {
     /// use acme_client::Directory;
-    /// let dir = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")
-    ///     .unwrap();
+    /// let dir = Directory::from_url("https://acme-staging.api.letsencrypt.org/directory")?;
+    /// # Ok(()) }
+    /// # fn main () { try_main().unwrap(); }
     /// ```
     pub fn from_url(url: &str) -> Result<Directory> {
         let client = Client::new()?;
@@ -384,13 +408,16 @@ impl Directory {
     /// AccountRegistration is used to register an account.
     ///
     /// ```rust,no_run
+    /// # use acme_client::error::Result;
+    /// # fn try_main() -> Result<()> {
     /// use acme_client::Directory;
     ///
-    /// let directory = Directory::lets_encrypt().unwrap();
+    /// let directory = Directory::lets_encrypt()?;
     /// let account = directory.account_registration()
     ///                        .email("example@example.org")
-    ///                        .register()
-    ///                        .unwrap();
+    ///                        .register()?;
+    /// # Ok(()) }
+    /// # fn main () { try_main().unwrap(); }
     /// ```
     pub fn account_registration(self) -> AccountRegistration {
         AccountRegistration {
