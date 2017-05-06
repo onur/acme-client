@@ -248,7 +248,7 @@ use std::io::{Read, Write};
 use std::collections::HashMap;
 
 use openssl::sign::Signer;
-use openssl::hash::{hash, MessageDigest};
+use openssl::hash::{hash2, MessageDigest};
 use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 use openssl::x509::{X509, X509Req, X509Name};
@@ -459,19 +459,19 @@ impl Directory {
         data.insert("header".to_owned(), header.to_json());
 
         // payload: b64 of payload
-        let payload64 = b64(encode(&payload.to_json())?.into_bytes());
+        let payload64 = b64(&encode(&payload.to_json())?.into_bytes());
         data.insert("payload".to_owned(), payload64.to_json());
 
         // protected: base64 of header + nonce
         header.insert("nonce".to_owned(), nonce.to_json());
-        let protected64 = b64(encode(&header)?.into_bytes());
+        let protected64 = b64(&encode(&header)?.into_bytes());
         data.insert("protected".to_owned(), protected64.to_json());
 
         // signature: b64 of hash of signature of {proctected64}.{payload64}
         data.insert("signature".to_owned(), {
             let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
             signer.update(&format!("{}.{}", protected64, payload64).into_bytes())?;
-            b64(signer.finish()?).to_json()
+            b64(&signer.finish()?).to_json()
         });
 
         let json_str = encode(&data)?;
@@ -483,12 +483,12 @@ impl Directory {
         let rsa = pkey.rsa()?;
         let mut jwk: HashMap<String, String> = HashMap::new();
         jwk.insert("e".to_owned(),
-                   b64(rsa.e()
+                   b64(&rsa.e()
                            .ok_or("e not found in RSA key")?
                            .to_vec()));
         jwk.insert("kty".to_owned(), "RSA".to_owned());
         jwk.insert("n".to_owned(),
-                   b64(rsa.n()
+                   b64(&rsa.n()
                            .ok_or("n not found in RSA key")?
                            .to_vec()));
         Ok(jwk.to_json())
@@ -543,8 +543,8 @@ impl Account {
             let key_authorization =
                 format!("{}.{}",
                         token,
-                        b64(hash(MessageDigest::sha256(),
-                                 &encode(&self.directory().jwk(self.pkey())?)?.into_bytes())?));
+                        b64(&hash2(MessageDigest::sha256(),
+                                   &encode(&self.directory().jwk(self.pkey())?)?.into_bytes())?));
 
             let challenge = Challenge {
                 account: self,
@@ -591,7 +591,7 @@ impl Account {
     pub fn revoke_certificate(&self, cert: &X509) -> Result<()> {
         let (status, resp) = {
             let mut map = HashMap::new();
-            map.insert("certificate".to_owned(), b64(cert.to_der()?));
+            map.insert("certificate".to_owned(), b64(&cert.to_der()?));
 
             self.directory().request(self.pkey(), "revoke-cert", map)?
         };
@@ -739,7 +739,7 @@ impl<'a> CertificateSigner<'a> {
         let csr = self.csr.unwrap_or(gen_csr(&pkey, self.domains)?);
         let mut map = HashMap::new();
         map.insert("resource".to_owned(), "new-cert".to_owned());
-        map.insert("csr".to_owned(), b64(csr.to_der()?));
+        map.insert("csr".to_owned(), b64(&csr.to_der()?));
 
         let client = Client::new()?;
         let jws = self.account
@@ -915,8 +915,8 @@ impl<'a> Challenge<'a> {
     /// This value is used for verification of domain over DNS. Signature must be saved
     /// as a TXT record for `_acme_challenge.example.com`.
     pub fn signature(&self) -> Result<String> {
-        Ok(b64(hash(MessageDigest::sha256(),
-                    &self.key_authorization.clone().into_bytes())?))
+        Ok(b64(&hash2(MessageDigest::sha256(),
+                      &self.key_authorization.clone().into_bytes())?))
     }
 
     /// Returns challenge type, usually `http-01` or `dns-01` for Let's Encrypt.
@@ -1060,7 +1060,7 @@ fn gen_key() -> Result<PKey> {
 
 
 /// Base 64 Encoding with URL and Filename Safe Alphabet
-fn b64(data: Vec<u8>) -> String {
+fn b64(data: &[u8]) -> String {
     let config = base64::Config {
         char_set: base64::CharacterSet::UrlSafe,
         newline: base64::Newline::LF,
@@ -1147,7 +1147,7 @@ mod tests {
 
     #[test]
     fn test_b64() {
-        assert_eq!(b64("foobar".to_string().into_bytes()), "Zm9vYmFy");
+        assert_eq!(b64(&"foobar".to_string().into_bytes()), "Zm9vYmFy");
     }
 
     #[test]
