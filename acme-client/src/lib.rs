@@ -297,7 +297,7 @@ pub const LETSENCRYPT_INTERMEDIATE_CERT_URL: &'static str = "https://letsencrypt
 const BIT_LENGTH: u32 = 2048;
 
 
-/// Directory object to configure client. Mail entry point of `acme-client`.
+/// Directory object to configure client. Main entry point of `acme-client`.
 ///
 /// See [section-6.1.1](https://tools.ietf.org/html/draft-ietf-acme-acme-05#section-6.1.1)
 /// for more details.
