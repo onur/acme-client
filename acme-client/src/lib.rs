@@ -104,7 +104,7 @@
 //! ```
 //!
 //! [Authorization](struct.Authorization.html) object will contain challenges created by
-//! ACME server. You can create as many Authorization object as you want to verifiy ownership
+//! ACME server. You can create as many Authorization object as you want to verify ownership
 //! of the domain names. For example if you want to sign a certificate for
 //! `example.com` and `example.org`:
 //!
