@@ -108,16 +108,17 @@ fn main() {
     init_logger(matches.occurrences_of("verbose"));
 
     let res = if let Some(matches) = matches.subcommand_matches("sign") {
-        // TODO: remove unwrap
         sign_certificate(matches)
     } else if let Some(matches) = matches.subcommand_matches("revoke") {
         revoke_certificate(matches)
     } else {
-        Err(matches.usage().into())
+        println!("{}", matches.usage());
+        Ok(())
     };
 
     if let Err(e) = res {
-        writeln!(io::stderr(), "{}", e).expect("Failed to write stderr");
+        writeln!(io::stderr(), "{}", e.description()).expect("Failed to write stderr");
+        ::std::process::exit(1);
     }
 }
 
