@@ -262,7 +262,7 @@ extern crate hyper;
 extern crate reqwest;
 extern crate serde;
 extern crate serde_json;
-extern crate rustc_serialize;
+extern crate base64;
 
 use std::path::Path;
 use std::fs::File;
@@ -278,9 +278,6 @@ use openssl::x509::extension::SubjectAlternativeName;
 use openssl::stack::Stack;
 
 use reqwest::{Client, StatusCode};
-
-use rustc_serialize::json::{Json, ToJson, encode};
-use rustc_serialize::base64::{self, ToBase64};
 
 use error::{Result, ErrorKind};
 
@@ -399,11 +396,11 @@ impl Directory {
     }
 
     /// Returns url for the resource.
-    fn url_for(&self, resource: &str) -> Option<String> {
+    fn url_for(&self, resource: &str) -> Option<&str> {
         self.directory
             .as_object()
             .and_then(|o| o.get(resource))
-            .and_then(|k| to_string(k).ok())
+            .and_then(|k| k.as_str())
     }
 
     /// Consumes directory and creates new AccountRegistration.
@@ -437,9 +434,9 @@ impl Directory {
     /// This function will try to look for `new-nonce` key in directory if it doesn't exists
     /// it will try to get nonce header from directory url.
     fn get_nonce(&self) -> Result<String> {
-        let url = self.url_for("new-nonce").unwrap_or(self.url.clone());
+        let url = self.url_for("new-nonce").unwrap_or(&self.url);
         let client = Client::new()?;
-        let res = client.get(&url).send()?;
+        let res = client.get(url).send()?;
         res.headers()
             .get::<hyperx::ReplayNonce>()
             .ok_or("Replay-Nonce header not found".into())
@@ -448,20 +445,24 @@ impl Directory {
 
     /// Makes a new post request to directory, signs payload with pkey.
     ///
-    /// Returns status code and Json object from reply.
+    /// Returns status code and Value object from reply.
     fn request<T: Serialize>(&self,
                              pkey: &PKey,
                              resource: &str,
                              payload: T)
-                             -> Result<(StatusCode, Json)> {
-        let mut json = to_value(payload)?;
+                             -> Result<(StatusCode, Value)> {
+
+        let mut json = to_value(&payload)?;
+
+        let resource_json: Value = to_value(resource)?;
         json.as_object_mut()
-            .and_then(|obj| obj.insert("resource".to_owned(), from_str(resource).unwrap()));
+            .and_then(|obj| obj.insert("resource".to_owned(), resource_json));
+
         let jws = self.jws(pkey, json)?;
         let client = Client::new()?;
         let mut res = client
-            .post(&self.url_for(resource)
-                       .ok_or(format!("URL for resource: {} not found", resource))?)
+            .post(self.url_for(resource)
+                      .ok_or(format!("URL for resource: {} not found", resource))?)
             .body(&jws[..])
             .send()?;
 
@@ -469,9 +470,9 @@ impl Directory {
             let mut res_content = String::new();
             res.read_to_string(&mut res_content)?;
             if !res_content.is_empty() {
-                Json::from_str(&res_content)?
+                from_str(&res_content)?
             } else {
-                true.to_json()
+                to_value(true)?
             }
         };
 
@@ -481,38 +482,38 @@ impl Directory {
     /// Makes a Flattened JSON Web Signature from payload
     fn jws<T: Serialize>(&self, pkey: &PKey, payload: T) -> Result<String> {
         let nonce = self.get_nonce()?;
-        let mut data: HashMap<String, Json> = HashMap::new();
+        let mut data: HashMap<String, Value> = HashMap::new();
 
         // header: 'alg': 'RS256', 'jwk': { e, n, kty }
-        let mut header: HashMap<String, Json> = HashMap::new();
-        header.insert("alg".to_owned(), "RS256".to_json());
+        let mut header: HashMap<String, Value> = HashMap::new();
+        header.insert("alg".to_owned(), to_value("RS256")?);
         header.insert("jwk".to_owned(), self.jwk(pkey)?);
-        data.insert("header".to_owned(), header.to_json());
+        data.insert("header".to_owned(), to_value(&header)?);
 
         // payload: b64 of payload
         let payload = to_string(&payload)?;
-        let payload64 = b64(&encode(&payload)?.into_bytes());
-        data.insert("payload".to_owned(), payload64.to_json());
+        let payload64 = b64(&payload.into_bytes());
+        data.insert("payload".to_owned(), to_value(&payload64)?);
 
         // protected: base64 of header + nonce
-        header.insert("nonce".to_owned(), nonce.to_json());
-        let protected64 = b64(&encode(&header)?.into_bytes());
-        data.insert("protected".to_owned(), protected64.to_json());
+        header.insert("nonce".to_owned(), to_value(nonce)?);
+        let protected64 = b64(&to_string(&header)?.into_bytes());
+        data.insert("protected".to_owned(), to_value(&protected64)?);
 
         // signature: b64 of hash of signature of {proctected64}.{payload64}
         data.insert("signature".to_owned(), {
             let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
             signer
                 .update(&format!("{}.{}", protected64, payload64).into_bytes())?;
-            b64(&signer.finish()?).to_json()
+            to_value(b64(&signer.finish()?))?
         });
 
-        let json_str = encode(&data)?;
+        let json_str = to_string(&data)?;
         Ok(json_str)
     }
 
     /// Returns jwk field of jws header
-    fn jwk(&self, pkey: &PKey) -> Result<Json> {
+    fn jwk(&self, pkey: &PKey) -> Result<Value> {
         let rsa = pkey.rsa()?;
         let mut jwk: HashMap<String, String> = HashMap::new();
         jwk.insert("e".to_owned(),
@@ -520,7 +521,7 @@ impl Directory {
         jwk.insert("kty".to_owned(), "RSA".to_owned());
         jwk.insert("n".to_owned(),
                    b64(&rsa.n().ok_or("n not found in RSA key")?.to_vec()));
-        Ok(jwk.to_json())
+        Ok(to_value(jwk)?)
     }
 }
 
@@ -556,26 +557,27 @@ impl Account {
                 .ok_or("Challenge object not found")?;
 
             let ctype = obj.get("type")
-                .and_then(|t| t.as_string())
+                .and_then(|t| t.as_str())
                 .ok_or("Challenge type not found")?
                 .to_owned();
             let uri = obj.get("uri")
-                .and_then(|t| t.as_string())
+                .and_then(|t| t.as_str())
                 .ok_or("URI not found")?
                 .to_owned();
             let token = obj.get("token")
-                .and_then(|t| t.as_string())
+                .and_then(|t| t.as_str())
                 .ok_or("Token not found")?
                 .to_owned();
 
             // This seems really cryptic but it's not
             // https://tools.ietf.org/html/draft-ietf-acme-acme-05#section-7.1
             // key-authz = token || '.' || base64url(JWK\_Thumbprint(accountKey))
-            let key_authorization =
-                format!("{}.{}",
-                        token,
-                        b64(&hash2(MessageDigest::sha256(),
-                                   &encode(&self.directory().jwk(self.pkey())?)?.into_bytes())?));
+            let key_authorization = format!("{}.{}",
+                                            token,
+                                            b64(&hash2(MessageDigest::sha256(),
+                                                       &to_string(&self.directory()
+                                                                       .jwk(self.pkey())?)?
+                                                                .into_bytes())?));
 
             let challenge = Challenge {
                 account: self,
@@ -711,8 +713,10 @@ impl AccountRegistration {
             map.insert("contract".to_owned(),
                        to_value(vec![format!("mailto:{}", email)])?);
         }
+
         let pkey = self.pkey.unwrap_or(gen_key()?);
         let (status, resp) = self.directory.request(&pkey, "new-reg", map)?;
+
         match status {
             StatusCode::Created => debug!("User successfully registered"),
             StatusCode::Conflict => debug!("User already registered"),
@@ -777,10 +781,10 @@ impl<'a> CertificateSigner<'a> {
         let client = Client::new()?;
         let jws = self.account.directory().jws(self.account.pkey(), map)?;
         let mut res = client
-            .post(&self.account
-                       .directory()
-                       .url_for("new-cert")
-                       .ok_or("new-cert url not found")?)
+            .post(self.account
+                      .directory()
+                      .url_for("new-cert")
+                      .ok_or("new-cert url not found")?)
             .body(&jws[..])
             .send()?;
 
@@ -788,7 +792,7 @@ impl<'a> CertificateSigner<'a> {
             let res_json = {
                 let mut res_content = String::new();
                 res.read_to_string(&mut res_content)?;
-                Json::from_str(&res_content)?
+                from_str(&res_content)?
             };
             return Err(ErrorKind::AcmeServerError(res_json).into());
         }
@@ -987,10 +991,10 @@ impl<'a> Challenge<'a> {
         let client = Client::new()?;
         let mut resp = client.post(&self.url).body(&payload[..]).send()?;
 
-        let mut res_json: Json = {
+        let mut res_json: Value = {
             let mut res_content = String::new();
             resp.read_to_string(&mut res_content)?;
-            Json::from_str(&res_content)?
+            from_str(&res_content)?
         };
 
         if resp.status() != &StatusCode::Accepted {
@@ -1001,7 +1005,7 @@ impl<'a> Challenge<'a> {
             let status = res_json
                 .as_object()
                 .and_then(|o| o.get("status"))
-                .and_then(|s| s.as_string())
+                .and_then(|s| s.as_str())
                 .ok_or("Status not found")?
                 .to_owned();
 
@@ -1011,7 +1015,7 @@ impl<'a> Challenge<'a> {
                 res_json = {
                     let mut res_content = String::new();
                     resp.read_to_string(&mut res_content)?;
-                    Json::from_str(&res_content)?
+                    from_str(&res_content)?
                 };
             } else if status == "valid" {
                 return Ok(());
@@ -1041,7 +1045,6 @@ pub mod error {
     use openssl;
     use hyper;
     use reqwest;
-    use rustc_serialize;
     use serde_json;
 
     error_chain! {
@@ -1057,13 +1060,11 @@ pub mod error {
             IoError(io::Error);
             HyperError(hyper::Error);
             ReqwestError(reqwest::Error);
-            JsonEncoderError(rustc_serialize::json::EncoderError);
-            JsonParserError(rustc_serialize::json::ParserError);
-            JsonParserErrorSerde(serde_json::Error);
+            ValueParserError(serde_json::Error);
         }
 
         errors {
-            AcmeServerError(resp: rustc_serialize::json::Json) {
+            AcmeServerError(resp: serde_json::Value) {
                 description("Acme server error")
                     display("Acme server error: {}", acme_server_error_description(resp))
             }
@@ -1071,14 +1072,10 @@ pub mod error {
     }
 
 
-    fn acme_server_error_description(resp: &rustc_serialize::json::Json) -> String {
+    fn acme_server_error_description(resp: &serde_json::Value) -> String {
         if let Some(obj) = resp.as_object() {
-            let t = obj.get("type")
-                .and_then(|t| t.as_string())
-                .unwrap_or("");
-            let detail = obj.get("detail")
-                .and_then(|d| d.as_string())
-                .unwrap_or("");
+            let t = obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            let detail = obj.get("detail").and_then(|d| d.as_str()).unwrap_or("");
             format!("{} {}", t, detail)
         } else {
             String::new()
@@ -1098,13 +1095,7 @@ fn gen_key() -> Result<PKey> {
 
 /// Base 64 Encoding with URL and Filename Safe Alphabet
 fn b64(data: &[u8]) -> String {
-    let config = base64::Config {
-        char_set: base64::CharacterSet::UrlSafe,
-        newline: base64::Newline::LF,
-        pad: false,
-        line_length: None,
-    };
-    data.to_base64(config)
+    base64::encode_config(data, base64::URL_SAFE_NO_PAD)
 }
 
 
