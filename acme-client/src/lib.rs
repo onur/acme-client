@@ -260,8 +260,9 @@ extern crate error_chain;
 #[macro_use]
 extern crate hyper;
 extern crate reqwest;
-extern crate rustc_serialize;
-
+extern crate serde;
+extern crate serde_json;
+extern crate base64;
 
 use std::path::Path;
 use std::fs::File;
@@ -278,11 +279,10 @@ use openssl::stack::Stack;
 
 use reqwest::{Client, StatusCode};
 
-use rustc_serialize::json::{Json, ToJson, encode};
-use rustc_serialize::base64::{self, ToBase64};
-
 use error::{Result, ErrorKind};
 
+use serde_json::{Value, from_str, to_string, to_value};
+use serde::Serialize;
 
 /// Default Let's Encrypt directory URL to configure client.
 pub const LETSENCRYPT_DIRECTORY_URL: &'static str = "https://acme-v01.api.letsencrypt.org\
@@ -304,7 +304,7 @@ const BIT_LENGTH: u32 = 2048;
 pub struct Directory {
     /// Base URL of directory
     url: String,
-    directory: Json,
+    directory: Value,
 }
 
 /// Registered account object.
@@ -390,7 +390,7 @@ impl Directory {
         res.read_to_string(&mut content)?;
         Ok(Directory {
                url: url.to_owned(),
-               directory: Json::from_str(&content)?,
+               directory: from_str(&content)?,
            })
 
     }
@@ -400,7 +400,7 @@ impl Directory {
         self.directory
             .as_object()
             .and_then(|o| o.get(resource))
-            .and_then(|k| k.as_string())
+            .and_then(|k| k.as_str())
     }
 
     /// Consumes directory and creates new AccountRegistration.
@@ -445,19 +445,24 @@ impl Directory {
 
     /// Makes a new post request to directory, signs payload with pkey.
     ///
-    /// Returns status code and Json object from reply.
-    fn request<T: ToJson>(&self,
-                          pkey: &PKey,
-                          resource: &str,
-                          payload: T)
-                          -> Result<(StatusCode, Json)> {
-        let mut json = payload.to_json();
-        json.as_object_mut().and_then(|obj| obj.insert("resource".to_owned(), resource.to_json()));
+    /// Returns status code and Value object from reply.
+    fn request<T: Serialize>(&self,
+                             pkey: &PKey,
+                             resource: &str,
+                             payload: T)
+                             -> Result<(StatusCode, Value)> {
+
+        let mut json = to_value(&payload)?;
+
+        let resource_json: Value = to_value(resource)?;
+        json.as_object_mut()
+            .and_then(|obj| obj.insert("resource".to_owned(), resource_json));
+
         let jws = self.jws(pkey, json)?;
         let client = Client::new()?;
-        let mut res = client.post(self.url_for(resource)
-                                      .ok_or(format!("URL for resource: {} not found",
-                                                     resource))?)
+        let mut res = client
+            .post(self.url_for(resource)
+                      .ok_or(format!("URL for resource: {} not found", resource))?)
             .body(&jws[..])
             .send()?;
 
@@ -465,9 +470,9 @@ impl Directory {
             let mut res_content = String::new();
             res.read_to_string(&mut res_content)?;
             if !res_content.is_empty() {
-                Json::from_str(&res_content)?
+                from_str(&res_content)?
             } else {
-                true.to_json()
+                to_value(true)?
             }
         };
 
@@ -475,50 +480,48 @@ impl Directory {
     }
 
     /// Makes a Flattened JSON Web Signature from payload
-    fn jws<T: ToJson>(&self, pkey: &PKey, payload: T) -> Result<String> {
+    fn jws<T: Serialize>(&self, pkey: &PKey, payload: T) -> Result<String> {
         let nonce = self.get_nonce()?;
-        let mut data: HashMap<String, Json> = HashMap::new();
+        let mut data: HashMap<String, Value> = HashMap::new();
 
         // header: 'alg': 'RS256', 'jwk': { e, n, kty }
-        let mut header: HashMap<String, Json> = HashMap::new();
-        header.insert("alg".to_owned(), "RS256".to_json());
+        let mut header: HashMap<String, Value> = HashMap::new();
+        header.insert("alg".to_owned(), to_value("RS256")?);
         header.insert("jwk".to_owned(), self.jwk(pkey)?);
-        data.insert("header".to_owned(), header.to_json());
+        data.insert("header".to_owned(), to_value(&header)?);
 
         // payload: b64 of payload
-        let payload64 = b64(&encode(&payload.to_json())?.into_bytes());
-        data.insert("payload".to_owned(), payload64.to_json());
+        let payload = to_string(&payload)?;
+        let payload64 = b64(&payload.into_bytes());
+        data.insert("payload".to_owned(), to_value(&payload64)?);
 
         // protected: base64 of header + nonce
-        header.insert("nonce".to_owned(), nonce.to_json());
-        let protected64 = b64(&encode(&header)?.into_bytes());
-        data.insert("protected".to_owned(), protected64.to_json());
+        header.insert("nonce".to_owned(), to_value(nonce)?);
+        let protected64 = b64(&to_string(&header)?.into_bytes());
+        data.insert("protected".to_owned(), to_value(&protected64)?);
 
         // signature: b64 of hash of signature of {proctected64}.{payload64}
         data.insert("signature".to_owned(), {
             let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
-            signer.update(&format!("{}.{}", protected64, payload64).into_bytes())?;
-            b64(&signer.finish()?).to_json()
+            signer
+                .update(&format!("{}.{}", protected64, payload64).into_bytes())?;
+            to_value(b64(&signer.finish()?))?
         });
 
-        let json_str = encode(&data)?;
+        let json_str = to_string(&data)?;
         Ok(json_str)
     }
 
     /// Returns jwk field of jws header
-    fn jwk(&self, pkey: &PKey) -> Result<Json> {
+    fn jwk(&self, pkey: &PKey) -> Result<Value> {
         let rsa = pkey.rsa()?;
         let mut jwk: HashMap<String, String> = HashMap::new();
         jwk.insert("e".to_owned(),
-                   b64(&rsa.e()
-                           .ok_or("e not found in RSA key")?
-                           .to_vec()));
+                   b64(&rsa.e().ok_or("e not found in RSA key")?.to_vec()));
         jwk.insert("kty".to_owned(), "RSA".to_owned());
         jwk.insert("n".to_owned(),
-                   b64(&rsa.n()
-                           .ok_or("n not found in RSA key")?
-                           .to_vec()));
-        Ok(jwk.to_json())
+                   b64(&rsa.n().ok_or("n not found in RSA key")?.to_vec()));
+        Ok(to_value(jwk)?)
     }
 }
 
@@ -549,29 +552,32 @@ impl Account {
                 .and_then(|c| c.as_array())
                 .ok_or("No challenge found")? {
 
-            let obj = challenge.as_object().ok_or("Challenge object not found")?;
+            let obj = challenge
+                .as_object()
+                .ok_or("Challenge object not found")?;
 
             let ctype = obj.get("type")
-                .and_then(|t| t.as_string())
+                .and_then(|t| t.as_str())
                 .ok_or("Challenge type not found")?
                 .to_owned();
             let uri = obj.get("uri")
-                .and_then(|t| t.as_string())
+                .and_then(|t| t.as_str())
                 .ok_or("URI not found")?
                 .to_owned();
             let token = obj.get("token")
-                .and_then(|t| t.as_string())
+                .and_then(|t| t.as_str())
                 .ok_or("Token not found")?
                 .to_owned();
 
             // This seems really cryptic but it's not
             // https://tools.ietf.org/html/draft-ietf-acme-acme-05#section-7.1
             // key-authz = token || '.' || base64url(JWK\_Thumbprint(accountKey))
-            let key_authorization =
-                format!("{}.{}",
-                        token,
-                        b64(&hash2(MessageDigest::sha256(),
-                                   &encode(&self.directory().jwk(self.pkey())?)?.into_bytes())?));
+            let key_authorization = format!("{}.{}",
+                                            token,
+                                            b64(&hash2(MessageDigest::sha256(),
+                                                       &to_string(&self.directory()
+                                                                       .jwk(self.pkey())?)?
+                                                                .into_bytes())?));
 
             let challenge = Challenge {
                 account: self,
@@ -620,7 +626,8 @@ impl Account {
             let mut map = HashMap::new();
             map.insert("certificate".to_owned(), b64(&cert.to_der()?));
 
-            self.directory().request(self.pkey(), "revoke-cert", map)?
+            self.directory()
+                .request(self.pkey(), "revoke-cert", map)?
         };
 
         match status {
@@ -695,18 +702,21 @@ impl AccountRegistration {
         info!("Registering account");
         let mut map = HashMap::new();
         map.insert("agreement".to_owned(),
-                   self.agreement.unwrap_or(LETSENCRYPT_AGREEMENT_URL.to_owned()).to_json());
+                   to_value(self.agreement
+                                .unwrap_or(LETSENCRYPT_AGREEMENT_URL.to_owned()))?);
         if let Some(mut contact) = self.contact {
             if let Some(email) = self.email {
                 contact.push(format!("mailto:{}", email));
             }
-            map.insert("contract".to_owned(), contact.to_json());
+            map.insert("contract".to_owned(), to_value(contact)?);
         } else if let Some(email) = self.email {
             map.insert("contract".to_owned(),
-                       vec![format!("mailto:{}", email)].to_json());
+                       to_value(vec![format!("mailto:{}", email)])?);
         }
+
         let pkey = self.pkey.unwrap_or(gen_key()?);
         let (status, resp) = self.directory.request(&pkey, "new-reg", map)?;
+
         match status {
             StatusCode::Created => debug!("User successfully registered"),
             StatusCode::Conflict => debug!("User already registered"),
@@ -769,13 +779,12 @@ impl<'a> CertificateSigner<'a> {
         map.insert("csr".to_owned(), b64(&csr.to_der()?));
 
         let client = Client::new()?;
-        let jws = self.account
-            .directory()
-            .jws(self.account.pkey(), map)?;
-        let mut res = client.post(self.account
-                                      .directory()
-                                      .url_for("new-cert")
-                                      .ok_or("new-cert url not found")?)
+        let jws = self.account.directory().jws(self.account.pkey(), map)?;
+        let mut res = client
+            .post(self.account
+                      .directory()
+                      .url_for("new-cert")
+                      .ok_or("new-cert url not found")?)
             .body(&jws[..])
             .send()?;
 
@@ -783,7 +792,7 @@ impl<'a> CertificateSigner<'a> {
             let res_json = {
                 let mut res_content = String::new();
                 res.read_to_string(&mut res_content)?;
-                Json::from_str(&res_content)?
+                from_str(&res_content)?
             };
             return Err(ErrorKind::AcmeServerError(res_json).into());
         }
@@ -860,7 +869,9 @@ impl SignedCertificate {
     /// will be used if url is None.
     fn get_intermediate_certificate(&self, url: Option<&str>) -> Result<X509> {
         let client = Client::new()?;
-        let mut res = client.get(url.unwrap_or(LETSENCRYPT_INTERMEDIATE_CERT_URL)).send()?;
+        let mut res = client
+            .get(url.unwrap_or(LETSENCRYPT_INTERMEDIATE_CERT_URL))
+            .send()?;
         let mut content = Vec::new();
         res.read_to_end(&mut content)?;
         Ok(X509::from_pem(&content)?)
@@ -966,28 +977,24 @@ impl<'a> Challenge<'a> {
         info!("Triggering {} validation", self.ctype);
         let payload = {
             let map = {
-                let mut map: HashMap<String, Json> = HashMap::new();
-                map.insert("type".to_owned(), self.ctype.to_json());
-                map.insert("token".to_owned(), self.token.to_json());
-                map.insert("resource".to_owned(), "challenge".to_json());
+                let mut map: HashMap<String, Value> = HashMap::new();
+                map.insert("type".to_owned(), to_value(&self.ctype)?);
+                map.insert("token".to_owned(), to_value(&self.token)?);
+                map.insert("resource".to_owned(), to_value("challenge")?);
                 map.insert("keyAuthorization".to_owned(),
-                           self.key_authorization.to_json());
+                           to_value(&self.key_authorization)?);
                 map
             };
-            self.account
-                .directory()
-                .jws(self.account.pkey(), map)?
+            self.account.directory().jws(self.account.pkey(), map)?
         };
 
         let client = Client::new()?;
-        let mut resp = client.post(&self.url)
-            .body(&payload[..])
-            .send()?;
+        let mut resp = client.post(&self.url).body(&payload[..]).send()?;
 
-        let mut res_json: Json = {
+        let mut res_json: Value = {
             let mut res_content = String::new();
             resp.read_to_string(&mut res_content)?;
-            Json::from_str(&res_content)?
+            from_str(&res_content)?
         };
 
         if resp.status() != &StatusCode::Accepted {
@@ -995,9 +1002,10 @@ impl<'a> Challenge<'a> {
         }
 
         loop {
-            let status = res_json.as_object()
+            let status = res_json
+                .as_object()
                 .and_then(|o| o.get("status"))
-                .and_then(|s| s.as_string())
+                .and_then(|s| s.as_str())
                 .ok_or("Status not found")?
                 .to_owned();
 
@@ -1007,7 +1015,7 @@ impl<'a> Challenge<'a> {
                 res_json = {
                     let mut res_content = String::new();
                     resp.read_to_string(&mut res_content)?;
-                    Json::from_str(&res_content)?
+                    from_str(&res_content)?
                 };
             } else if status == "valid" {
                 return Ok(());
@@ -1037,7 +1045,7 @@ pub mod error {
     use openssl;
     use hyper;
     use reqwest;
-    use rustc_serialize;
+    use serde_json;
 
     error_chain! {
         types {
@@ -1052,12 +1060,11 @@ pub mod error {
             IoError(io::Error);
             HyperError(hyper::Error);
             ReqwestError(reqwest::Error);
-            JsonEncoderError(rustc_serialize::json::EncoderError);
-            JsonParserError(rustc_serialize::json::ParserError);
+            ValueParserError(serde_json::Error);
         }
 
         errors {
-            AcmeServerError(resp: rustc_serialize::json::Json) {
+            AcmeServerError(resp: serde_json::Value) {
                 description("Acme server error")
                     display("Acme server error: {}", acme_server_error_description(resp))
             }
@@ -1065,10 +1072,10 @@ pub mod error {
     }
 
 
-    fn acme_server_error_description(resp: &rustc_serialize::json::Json) -> String {
+    fn acme_server_error_description(resp: &serde_json::Value) -> String {
         if let Some(obj) = resp.as_object() {
-            let t = obj.get("type").and_then(|t| t.as_string()).unwrap_or("");
-            let detail = obj.get("detail").and_then(|d| d.as_string()).unwrap_or("");
+            let t = obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            let detail = obj.get("detail").and_then(|d| d.as_str()).unwrap_or("");
             format!("{} {}", t, detail)
         } else {
             String::new()
@@ -1088,13 +1095,7 @@ fn gen_key() -> Result<PKey> {
 
 /// Base 64 Encoding with URL and Filename Safe Alphabet
 fn b64(data: &[u8]) -> String {
-    let config = base64::Config {
-        char_set: base64::CharacterSet::UrlSafe,
-        newline: base64::Newline::LF,
-        pad: false,
-        line_length: None,
-    };
-    data.to_base64(config)
+    base64::encode_config(data, base64::URL_SAFE_NO_PAD)
 }
 
 
@@ -1160,8 +1161,7 @@ mod tests {
                                                              org/directory";
 
     fn test_acc() -> Result<Account> {
-        Directory::from_url(LETSENCRYPT_STAGING_DIRECTORY_URL)
-            ?
+        Directory::from_url(LETSENCRYPT_STAGING_DIRECTORY_URL)?
             .account_registration()
             .pkey_from_file("tests/user.key")?
             .register()
@@ -1243,12 +1243,16 @@ mod tests {
         use std::env;
         let _ = env_logger::init();
         let account = test_acc().unwrap();
-        let auth = account.authorization(&env::var("TEST_DOMAIN").unwrap()).unwrap();
+        let auth = account
+            .authorization(&env::var("TEST_DOMAIN").unwrap())
+            .unwrap();
         let http_challenge = auth.get_http_challenge().unwrap();
-        assert!(http_challenge.save_key_authorization(&env::var("TEST_PUBLIC_DIR").unwrap())
+        assert!(http_challenge
+                    .save_key_authorization(&env::var("TEST_PUBLIC_DIR").unwrap())
                     .is_ok());
         assert!(http_challenge.validate().is_ok());
-        let cert = account.certificate_signer(&[&env::var("TEST_DOMAIN").unwrap()])
+        let cert = account
+            .certificate_signer(&[&env::var("TEST_DOMAIN").unwrap()])
             .sign_certificate()
             .unwrap();
         account.revoke_certificate(cert.cert()).unwrap();
