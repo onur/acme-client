@@ -640,7 +640,7 @@ impl Account {
     }
 
     /// Writes account private key to a writer
-    pub fn write_private_key<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+    pub fn write_private_key<W: Write>(&self, writer: &mut W) -> Result<()> {
         Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
     }
 
@@ -845,7 +845,7 @@ impl SignedCertificate {
     }
 
     /// Writes signed certificate to writer.
-    pub fn write_signed_certificate<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+    pub fn write_signed_certificate<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.cert.to_pem()?)?;
         Ok(())
     }
@@ -856,7 +856,7 @@ impl SignedCertificate {
     /// [`LETSENCRYPT_INTERMEDIATE_CERT_URL`](constant.LETSENCRYPT_INTERMEDIATE_CERT_URL.html).
     pub fn write_intermediate_certificate<W: Write>(&self,
                                                     url: Option<&str>,
-                                                    mut writer: &mut W)
+                                                    writer: &mut W)
                                                     -> Result<()> {
         let cert = self.get_intermediate_certificate(url)?;
         writer.write_all(&cert.to_pem()?)?;
@@ -878,12 +878,12 @@ impl SignedCertificate {
     }
 
     /// Writes private key used to sign certificate to a writer
-    pub fn write_private_key<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+    pub fn write_private_key<W: Write>(&self, writer: &mut W) -> Result<()> {
         Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
     }
 
     /// Writes CSR used to sign certificateto a writer
-    pub fn write_csr<W: Write>(&self, mut writer: &mut W) -> Result<()> {
+    pub fn write_csr<W: Write>(&self, writer: &mut W) -> Result<()> {
         Ok(writer.write_all(&self.csr().to_pem()?)?)
     }
 
