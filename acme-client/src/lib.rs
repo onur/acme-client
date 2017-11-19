@@ -288,8 +288,8 @@ use serde::Serialize;
 pub const LETSENCRYPT_DIRECTORY_URL: &'static str = "https://acme-v01.api.letsencrypt.org\
                                                      /directory";
 /// Default Let's Encrypt agreement URL used in account registration.
-pub const LETSENCRYPT_AGREEMENT_URL: &'static str = "https://letsencrypt.org/documents/LE-SA-v1.1.\
-                                                     1-August-1-2016.pdf";
+pub const LETSENCRYPT_AGREEMENT_URL: &'static str = "https://letsencrypt.org/documents/LE-SA-v1.2-\
+                                                     November-15-2017.pdf";
 /// Default Let's Encrypt intermediate certificate URL to chain when needed.
 pub const LETSENCRYPT_INTERMEDIATE_CERT_URL: &'static str = "https://letsencrypt.org/certs/\
                                                              lets-encrypt-x3-cross-signed.pem";
