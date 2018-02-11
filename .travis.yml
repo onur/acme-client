@@ -2,4 +2,5 @@ language: rust
 rust:
   - stable
   - nightly
+cache: cargo
 script: cargo build --verbose --all && cargo test --verbose --all
