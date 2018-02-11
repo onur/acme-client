@@ -198,7 +198,7 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
 fn revoke_certificate(matches: &ArgMatches) -> Result<()> {
     let directory = Directory::lets_encrypt()?;
     let account = directory.account_registration()
-        .pkey_from_file(matches.value_of("USER_KEY_PATH")
+        .pkey_from_file(matches.value_of("USER_KEY")
                             .ok_or("You need to provide user \
                                    or domain private key used \
                                    to sign certificate.")?)?
