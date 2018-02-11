@@ -117,7 +117,7 @@ fn main() {
     };
 
     if let Err(e) = res {
-        writeln!(io::stderr(), "{}", e.description()).expect("Failed to write stderr");
+        writeln!(io::stderr(), "{}", e).expect("Failed to write stderr");
         ::std::process::exit(1);
     }
 }
