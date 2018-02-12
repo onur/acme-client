@@ -32,6 +32,7 @@ revoke TLS certificates.
 
 ## Installation
 
+By default acme-client crate comes with a handy CLI.
 You can install acme-client with: `cargo install acme-client`
 
 
@@ -172,6 +173,21 @@ You can use multiple `-v` flags for verbose output.
 # Library
 
 You can read entire API documentation in [docs.rs](https://docs.rs/acme-client).
+You can use acme-client library by adding following lines to your `Cargo.toml`:
+
+```toml
+[dependencies]
+acme-client = "0.5"
+```
+
+By default `acme-client` will build CLI. You can disable this with:
+
+```toml
+[dependencies.acme-client]
+version = "0.5"
+default-features = false
+```
+
 
 ## API overview
 
