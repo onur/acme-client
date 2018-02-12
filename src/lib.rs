@@ -505,7 +505,7 @@ impl Directory {
             let mut signer = Signer::new(MessageDigest::sha256(), &pkey)?;
             signer
                 .update(&format!("{}.{}", protected64, payload64).into_bytes())?;
-            to_value(b64(&signer.finish()?))?
+            to_value(b64(&signer.sign_to_vec()?))?
         });
 
         let json_str = to_string(&data)?;

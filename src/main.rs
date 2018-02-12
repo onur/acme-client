@@ -5,7 +5,7 @@ extern crate clap;
 extern crate env_logger;
 
 
-use std::io::{self, Write};
+use std::io;
 use acme_client::Directory;
 use acme_client::error::Result;
 use clap::{Arg, App, SubCommand, ArgMatches};
