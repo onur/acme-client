@@ -15,8 +15,8 @@ fn main() {
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
-        .usage("letsencrypt-rs sign -D example.org -P /var/www -k domain.key -o domain.crt\
-                \n    letsencrypt-rs revoke -K user_or_domain.key -C signed.crt")
+        .usage("acme-client sign -D example.org -P /var/www -k domain.key -o domain.crt\
+                \n    acme-client revoke -K user_or_domain.key -C signed.crt")
         .subcommand(SubCommand::with_name("sign")
             .about("Signs a certificate")
             .display_order(1)
