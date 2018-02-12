@@ -1,16 +1,16 @@
-# letsencrypt-rs
+# acme-client
 
-[![Build Status](https://secure.travis-ci.org/onur/letsencrypt-rs.svg?branch=master)](https://travis-ci.org/onur/letsencrypt-rs)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/onur/letsencrypt-rs/master/LICENSE)
-[![Crates.io](https://img.shields.io/crates/v/letsencrypt-rs.svg)](https://crates.io/crates/letsencrypt-rs)
+[![Build Status](https://secure.travis-ci.org/onur/acme-client.svg?branch=master)](https://travis-ci.org/onur/acme-client)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/onur/acme-client/master/LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/acme-client.svg)](https://crates.io/crates/acme-client)
 [![docs.rs.io](https://docs.rs/acme-client/badge.svg)](https://docs.rs/acme-client)
 
-Easy to use Let's Encrypt client and acme client library to issue, renew and
+Easy to use Let's Encrypt compatible ACME client to issue, renew and
 revoke TLS certificates.
 
 **Contents**
 
-   * [letsencrypt-rs](#letsencrypt-rs)
+   * [CLI](#cli)
       * [Installation](#installation)
       * [Usage](#usage)
          * [Sign a certificate](#sign-a-certificate)
@@ -18,7 +18,7 @@ revoke TLS certificates.
          * [Using DNS validation](#using-dns-validation)
          * [Revoking a signed certificate](#revoking-a-signed-certificate)
       * [Options](#options)
-   * [acme-client crate](#acme-client-crate)
+   * [Library](#library)
       * [API overview](#api-overview)
       * [Account registration](#account-registration)
       * [Identifying ownership of domain name](#identifying-ownership-of-domain-name)
@@ -32,25 +32,25 @@ revoke TLS certificates.
 
 ## Installation
 
-You can install letsencrypt-rs with:
-`cargo install letsencrypt-rs`
+By default acme-client crate comes with a handy CLI.
+You can install acme-client with: `cargo install acme-client`
 
 
 ## Usage
 
-letsencrypt-rs is using the openssl library to generate all required keys
+acme-client is using the OpenSSL library to generate all required keys
 and certificate signing request. You don't need to run any openssl command.
 You can use your already generated keys and CSR if you want and you don't need
-any root access while running letsencrypt-rs.
+any root access while running acme-client.
 
-letsencrypt-rs is using simple HTTP validation to pass Let's Encrypt's DNS
+acme-client is using simple HTTP validation to pass Let's Encrypt's DNS
 validation challenge. You need a working HTTP server to host the challenge file.
 
 
 ### Sign a certificate
 
 ```sh
-letsencrypt-rs sign -D example.org -P /var/www -k domain.key -o domain.crt
+acme-client sign -D example.org -P /var/www -k domain.key -o domain.crt
 ```
 
 This command will generate a user key, domain key and X509 certificate signing
@@ -68,7 +68,7 @@ You can also use the `--email` option to provide a contact adress on registratio
 You can use your own RSA keys for user registration and domain. For example:
 
 ```sh
-letsencrypt-rs sign \
+acme-client sign \
   --user-key user.key \
   --domain-key domain.key \
   --domain-csr domain.csr \
@@ -88,7 +88,7 @@ option requires user to generate a TXT record for domain. An example DNS
 validation:
 
 ```sh
-$ letsencrypt-rs sign --dns -D onur.im -E onur@onur.im \
+$ acme-client sign --dns -D onur.im -E onur@onur.im \
     -k /tmp/onur.im.key -o /tmp/onur.im.crt
 Please create a TXT record for _acme-challenge.onur.im: fDdTmWl4RMuGqj9acJiTC13hF6dVOZUNm3FujCIz3jc
 Press enter to continue
@@ -97,26 +97,26 @@ Press enter to continue
 
 ### Revoking a signed certificate
 
-letsencrypt-rs can also revoke a signed certificate. You need to use your
+acme-client can also revoke a signed certificate. You need to use your
 user key and a signed certificate to revoke.
 
 ```sh
-letsencrypt-rs revoke --user-key user.key --signed-crt signed.crt
+acme-client revoke --user-key user.key --signed-crt signed.crt
 ```
 
 
 ## Options
 
-You can get a list of all available options with `letsencrypt-rs sign --help`
-and `letsencrypt-rs revoke --help`:
+You can get a list of all available options with `acme-client sign --help`
+and `acme-client revoke --help`:
 
 ```
-$ letsencrypt-rs sign --help
-letsencrypt-rs-sign
+$ acme-client sign --help
+acme-client-sign
 Signs a certificate
 
 USAGE:
-    letsencrypt-rs sign [FLAGS] [OPTIONS] --domain <DOMAIN>...
+    acme-client sign [FLAGS] [OPTIONS] --domain <DOMAIN>...
 
 FLAGS:
     -c, --chain      Chains the signed certificate with Let's Encrypt Authority
@@ -151,12 +151,12 @@ OPTIONS:
 ```
 
 ```
-$ letsencrypt-rs revoke --help
-letsencrypt-rs-revoke
+$ acme-client revoke --help
+acme-client-revoke
 Revokes a signed certificate
 
 USAGE:
-    letsencrypt-rs revoke --user-key <USER_KEY> --signed-crt <SIGNED_CRT>
+    acme-client revoke --user-key <USER_KEY> --signed-crt <SIGNED_CRT>
 
 FLAGS:
     -h, --help       Prints help information
@@ -170,10 +170,24 @@ OPTIONS:
 You can use multiple `-v` flags for verbose output.
 
 
-# `acme-client` crate
+# Library
 
-`letsencrypt-rs` is powered by the acme-client library. You can read entire
-documentation in [docs.rs](https://docs.rs/acme-client).
+You can read entire API documentation in [docs.rs](https://docs.rs/acme-client).
+You can use acme-client library by adding following lines to your `Cargo.toml`:
+
+```toml
+[dependencies]
+acme-client = "0.5"
+```
+
+By default `acme-client` will build CLI. You can disable this with:
+
+```toml
+[dependencies.acme-client]
+version = "0.5"
+default-features = false
+```
+
 
 ## API overview
 
@@ -234,11 +248,11 @@ let account = directory.account_registration()
 ```
 
 Contact email address is optional. You can also use your own private key during
-registration. See [AccountRegistration](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html) helper for more
+registration. See [AccountRegistration](https://docs.rs/acme-client/0.5/acme_client/struct.AccountRegistration.html) helper for more
 details.
 
 If you already registed with your own keys before, you still need to use
-[`register`](https://docs.rs/acme-client/0.4/acme_client/struct.AccountRegistration.html#method.register) method,
+[`register`](https://docs.rs/acme-client/0.5/acme_client/struct.AccountRegistration.html#method.register) method,
 in this case it will identify your user account instead of creating a new one.
 
 
@@ -255,7 +269,7 @@ To create an Authorization object for a domain:
 let authorization = account.authorization("example.com")?;
 ```
 
-[Authorization](https://docs.rs/acme-client/0.4/acme_client/struct.Authorization.html)
+[Authorization](https://docs.rs/acme-client/0.5/acme_client/struct.Authorization.html)
 object will contain challenges created by ACME server. You can create as many
 Authorization object as you want to verifiy ownership of the domain names. For example
 if you want to sign a certificate for `example.com` and `example.org`:
@@ -281,7 +295,7 @@ control over a domain name by proving that it can provision resources
 on an HTTP server that responds for that domain name.
 
 `acme-client` has
-[`save_key_authorization`](https://docs.rs/acme-client/0.4/acme_client/struct.Challenge.html#method.save_key_authorization) method
+[`save_key_authorization`](https://docs.rs/acme-client/0.5/acme_client/struct.Challenge.html#method.save_key_authorization) method
 to save vaditation file to a public directory. This directory must be accessible to outside
 world.
 
@@ -307,7 +321,7 @@ The DNS challenge requires the client to provision a TXT record containing a des
 value under a specific validation domain name.
 
 `acme-client` can generated this value with
-[`signature`](https://docs.rs/acme-client/0.4/acme_client/struct.Challenge.html#method.signature) method.
+[`signature`](https://docs.rs/acme-client/0.5/acme_client/struct.Challenge.html#method.signature) method.
 
 The user constructs the validation domain name by prepending the label "_acme-challenge"
 to the domain name being validated, then provisions a TXT record with the digest value under
@@ -334,7 +348,7 @@ dns_challenge.validate()?;
 ## Signing a certificate
 
 After validating all the domain names you can send a sign certificate request. `acme-client`
-provides [`CertificateSigner`](https://docs.rs/acme-client/0.4/acme_client/struct.CertificateSigner.html) helper for this. You can
+provides [`CertificateSigner`](https://docs.rs/acme-client/0.5/acme_client/struct.CertificateSigner.html) helper for this. You can
 use your own key and CSR or you can let `CertificateSigner` to generate them for you.
 
 ```rust,no_run
