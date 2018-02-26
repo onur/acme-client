@@ -21,6 +21,7 @@ reqwest = "0.6"
 openssl = "0.9.24"
 clap = { version = "2", optional = true }
 env_logger = { version = "0.4", optional = true }
+openssl-sys = { version = "0.9.24", optional = true }
 
 [dev-dependencies]
 env_logger = "0.4"
@@ -31,4 +32,4 @@ required-features = ["cli"]
 
 [features]
 default = ["cli"]
-cli = ["clap", "env_logger"]
+cli = ["clap", "env_logger", "openssl-sys"]
