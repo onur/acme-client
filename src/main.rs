@@ -243,12 +243,12 @@ fn init_logger(level: u64) {
 fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
     use std::fs::File;
     use std::io::Read;
+    use std::slice;
     use openssl::x509::{X509Req, X509Extension};
     use openssl::nid;
     use openssl::stack::Stack;
-    use openssl::asn1::Asn1String;
     use openssl::types::OpenSslTypeRef;
-    use std::os::raw::c_int;
+    use std::os::raw::{c_int, c_long, c_uchar};
     use openssl::types::OpenSslType;
 
     fn read_file<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
@@ -268,6 +268,13 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
     }
 
     unsafe {
+        #[repr(C)]
+        struct Asn1StringSt {
+            length: c_int,
+            type_: c_int,
+            data: *mut c_uchar,
+            flags: c_long
+        }
         extern "C" {
             fn X509_REQ_get_extensions(
                 req: *mut openssl_sys::X509_REQ
@@ -279,7 +286,7 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
             ) -> c_int;
             fn X509_EXTENSION_get_data(
                 ne: *mut openssl_sys::X509_EXTENSION,
-            ) -> *mut openssl_sys::ASN1_STRING;
+            ) -> *mut Asn1StringSt;
         }
         let extensions = X509_REQ_get_extensions(csr.as_ptr());
         if !extensions.is_null() {
@@ -290,8 +297,9 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
                 .iter().nth(san_extension_idx as usize) {
 
                 let extension_data = X509_EXTENSION_get_data(san_extension.as_ptr());
-                let astr = Asn1String::from_ptr(extension_data);
-                parse_asn1_octet_str(astr.as_slice()).iter().for_each(|n| {
+                let slc = slice::from_raw_parts((*extension_data).data,
+                                                (*extension_data).length as usize);
+                parse_asn1_octet_str(slc).iter().for_each(|n| {
                     names.insert(n.to_string());
                 });
             }
