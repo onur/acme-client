@@ -1,12 +1,15 @@
 acme-client (0.5.1) UNRELEASED
 
   [LIB]
-  * No changes.
+  * Implement save_intermediate_certificate for SignedCertificate.
 
   [CLI]
   * Add ability to get domain names from CSR when user provides a CSR with
     --domain-csr or -C command line options. --domain command line option
     will be ignored when a CSR provided. (Closes: #20)
+  * Add option to save intermediate certificate and make `-c` to save
+    signed certificate chain. `-o` option only saves signed certificate now
+    and `-c` will save signed certificate chain. (Closes: #19)
 
  -- Onur Aslan <onur@onur.im>  Tue, 27 Feb 2018 12:13:50 +0300
 

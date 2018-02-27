@@ -75,12 +75,17 @@ fn main() {
                 .short("o")
                 .long("save-crt")
                 .takes_value(true))
-            .arg(Arg::with_name("CHAIN")
+            .arg(Arg::with_name("SAVE_INTERMEDIATE_CERTIFICATE")
+                .help("Path to save intermediate certificate.")
+                .short("i")
+                .long("save-intermediate-crt")
+                .takes_value(true))
+            .arg(Arg::with_name("SAVE_CHAINED_CERTIFICATE")
                 .help("Chains the signed certificate with Let's Encrypt Authority X3 \
                        (IdenTrust cross-signed) intermediate certificate.")
                 .short("c")
-                .long("chain")
-                .takes_value(false))
+                .long("save-chained-crt")
+                .takes_value(true))
             .arg(Arg::with_name("DNS_CHALLENGE")
                  .help("Use DNS challenge instead of HTTP. This option requires user \
                         to generate a TXT record for domain")
@@ -190,14 +195,16 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     }
 
     let certificate = certificate_signer.sign_certificate()?;
-    let signed_certificate_path = matches.value_of("SAVE_SIGNED_CERTIFICATE")
-        .ok_or("You need to save signed certificate")?;
-    if matches.is_present("CHAIN") {
-        certificate.save_signed_certificate_and_chain(None, signed_certificate_path)?;
-    } else {
-        certificate.save_signed_certificate(signed_certificate_path)?;
-    }
 
+    if let Some(path) = matches.value_of("SAVE_SIGNED_CERTIFICATE") {
+        certificate.save_signed_certificate(path)?;
+    }
+    if let Some(path) = matches.value_of("SAVE_INTERMEDIATE_CERTIFICATE") {
+        certificate.save_intermediate_certificate(None, path)?;
+    }
+    if let Some(path) = matches.value_of("SAVE_CHAINED_CERTIFICATE") {
+        certificate.save_signed_certificate_and_chain(None, path)?;
+    }
     if let Some(path) = matches.value_of("SAVE_DOMAIN_KEY") {
         certificate.save_private_key(path)?;
     }

@@ -835,6 +835,18 @@ impl SignedCertificate {
         self.write_signed_certificate(&mut file)
     }
 
+    /// Saves intermediate certificate to a file
+    ///
+    /// You can additionally provide intermediate certificate url, by default it will use
+    /// [`LETSENCRYPT_INTERMEDIATE_CERT_URL`](constant.LETSENCRYPT_INTERMEDIATE_CERT_URL.html).
+    pub fn save_intermediate_certificate<P: AsRef<Path>>(&self,
+                                                         url: Option<&str>,
+                                                         path: P)
+                                                         -> Result<()> {
+        let mut file = File::create(path)?;
+        self.write_intermediate_certificate(url, &mut file)
+    }
+
     /// Saves intermediate certificate and signed certificate to a file
     ///
     /// You can additionally provide intermediate certificate url, by default it will use
