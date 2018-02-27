@@ -128,6 +128,21 @@ fn main() {
 
 
 fn sign_certificate(matches: &ArgMatches) -> Result<()> {
+    // get domain names from --domain-csr or --domain arguments
+    // FIXME: there is so many unncessary string conversations in the following code
+    let domains: Vec<String> = if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
+        names_from_csr(csr_path)?.into_iter().collect()
+    } else {
+        matches.values_of("DOMAIN")
+            .ok_or("You need to provide at least one domain name")?.map(|s| s.to_owned()).collect()
+    };
+
+    // domains could be empty if provided --csr doesn't contain any
+    if domains.is_empty() {
+        return Err("You need to provide at least one domain name with --domain argument \
+                   or from --csr".into());
+    }
+
     let directory = Directory::lets_encrypt()?;
 
     let mut account_registration = directory.account_registration();
@@ -141,21 +156,6 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     }
 
     let account = account_registration.register()?;
-
-    // get domain names from --csr or --domain arguments
-    // FIXME: there is so many unncessary string conversations in the following code
-    let domains: Vec<String> = if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
-        names_from_csr(csr_path)?.into_iter().collect()
-    } else {
-        matches.values_of("DOMAIN")
-            .ok_or("You need to provide at least one domain name")?.map(|s| s.to_owned()).collect()
-    };
-
-    // domains would be empty if provided --csr doesn't contain any
-    if domains.is_empty() {
-        return Err("You need to provide at least one domain name with --domain argument \
-                   or from --csr".into());
-    }
 
     for domain in &domains {
         let authorization = account.authorization(domain)?;
