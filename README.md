@@ -72,13 +72,12 @@ acme-client sign \
   --user-key user.key \
   --domain-key domain.key \
   --domain-csr domain.csr \
-  --domain example.org \
   -P /var/www \
   -o domain.crt
 ```
 
 This will not generate any key and it will use provided keys to sign
-the certificate.
+the certificate. It will also get domain names from provided CSR file.
 
 
 ### Using DNS validation

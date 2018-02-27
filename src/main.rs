@@ -1,11 +1,15 @@
 /// Easy to use Let's Encrypt client to issue and renew TLS certs
 
 extern crate acme_client;
+extern crate openssl;
 extern crate clap;
 extern crate env_logger;
+extern crate openssl_sys;
 
 
 use std::io;
+use std::path::Path;
+use std::collections::HashSet;
 use acme_client::Directory;
 use acme_client::error::Result;
 use clap::{Arg, App, SubCommand, ArgMatches};
@@ -35,7 +39,6 @@ fn main() {
                 .short("D")
                 .long("domain")
                 .multiple(true)
-                .required(true)
                 .takes_value(true))
             .arg(Arg::with_name("PUBLIC_DIR")
                 .help("Directory to save ACME simple http challenge. This option is required.")
@@ -125,6 +128,21 @@ fn main() {
 
 
 fn sign_certificate(matches: &ArgMatches) -> Result<()> {
+    // get domain names from --domain-csr or --domain arguments
+    // FIXME: there is so many unncessary string conversations in the following code
+    let domains: Vec<String> = if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
+        names_from_csr(csr_path)?.into_iter().collect()
+    } else {
+        matches.values_of("DOMAIN")
+            .ok_or("You need to provide at least one domain name")?.map(|s| s.to_owned()).collect()
+    };
+
+    // domains could be empty if provided --csr doesn't contain any
+    if domains.is_empty() {
+        return Err("You need to provide at least one domain name with --domain argument \
+                   or from --csr".into());
+    }
+
     let directory = Directory::lets_encrypt()?;
 
     let mut account_registration = directory.account_registration();
@@ -138,9 +156,7 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     }
 
     let account = account_registration.register()?;
-    let domains: Vec<_> = matches.values_of("DOMAIN")
-        .ok_or("You need to provide at least one domain name")?
-        .collect();
+
     for domain in &domains {
         let authorization = account.authorization(domain)?;
         if !matches.is_present("DNS_CHALLENGE") {
@@ -162,7 +178,8 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
         }
     }
 
-    let mut certificate_signer = account.certificate_signer(&domains);
+    let dv: Vec<&str> = domains.iter().map(String::as_str).collect();
+    let mut certificate_signer = account.certificate_signer(dv.as_slice());
 
     if let Some(domain_key_path) = matches.value_of("DOMAIN_KEY_PATH") {
         if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
@@ -220,4 +237,100 @@ fn init_logger(level: u64) {
     let mut builder = env_logger::LogBuilder::new();
     builder.parse(&::std::env::var("RUST_LOG").unwrap_or(level.to_owned()));
     let _ = builder.init();
+}
+
+
+fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
+    use std::fs::File;
+    use std::io::Read;
+    use std::slice;
+    use openssl::x509::{X509Req, X509Extension};
+    use openssl::nid;
+    use openssl::stack::Stack;
+    use openssl::types::OpenSslTypeRef;
+    use std::os::raw::{c_int, c_long, c_uchar};
+    use openssl::types::OpenSslType;
+
+    fn read_file<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
+        let mut file = File::open(path)?;
+        let mut content = Vec::new();
+        file.read_to_end(&mut content)?;
+        Ok(content)
+    }
+
+    let csr = X509Req::from_pem(&read_file(csr_path)?)?;
+
+    let mut names = HashSet::new();
+
+    // add CN to names first
+    if let Some(cn) = csr.subject_name().entries_by_nid(nid::COMMONNAME).nth(0) {
+        names.insert(String::from_utf8_lossy(cn.data().as_slice()).into_owned());
+    }
+
+    unsafe {
+        #[repr(C)]
+        struct Asn1StringSt {
+            length: c_int,
+            type_: c_int,
+            data: *mut c_uchar,
+            flags: c_long
+        }
+        extern "C" {
+            fn X509_REQ_get_extensions(
+                req: *mut openssl_sys::X509_REQ
+            ) -> *mut openssl_sys::stack_st_X509_EXTENSION;
+            fn X509v3_get_ext_by_NID(
+                x: *const openssl_sys::stack_st_X509_EXTENSION,
+                nid: c_int,
+                lastpos: c_int
+            ) -> c_int;
+            fn X509_EXTENSION_get_data(
+                ne: *mut openssl_sys::X509_EXTENSION,
+            ) -> *mut Asn1StringSt;
+        }
+        let extensions = X509_REQ_get_extensions(csr.as_ptr());
+        if !extensions.is_null() {
+            let san_extension_idx = X509v3_get_ext_by_NID(extensions,
+                                                          openssl_sys::NID_subject_alt_name,
+                                                          -1);
+            if let Some(san_extension) = Stack::<X509Extension>::from_ptr(extensions)
+                .iter().nth(san_extension_idx as usize) {
+
+                let extension_data = X509_EXTENSION_get_data(san_extension.as_ptr());
+                let slc = slice::from_raw_parts((*extension_data).data,
+                                                (*extension_data).length as usize);
+                parse_asn1_octet_str(slc).iter().for_each(|n| {
+                    names.insert(n.to_string());
+                });
+            }
+        }
+    }
+
+    Ok(names)
+}
+
+
+fn parse_asn1_octet_str(s: &[u8]) -> Vec<String> {
+    let mut iter = s.split(|n| *n == 130);
+    let mut names = Vec::new();
+    if iter.next().is_some() {
+        for s in iter {
+            let mut v = s.to_vec();
+            v.remove(0); // remove first element which is length
+            let name = String::from_utf8_lossy(&v);
+            names.push(name.into_owned());
+        }
+    }
+    names
+}
+
+#[test]
+fn test_names_from_csr() {
+    let _ = env_logger::init();
+    let mut names = HashSet::new();
+    names.insert("cn.example.com".to_owned());
+    names.insert("www.example.com".to_owned());
+    names.insert("example.com".to_owned());
+    let names_from_csr = names_from_csr("tests/domain_with_san.csr").unwrap();
+    assert_eq!(names, names_from_csr);
 }

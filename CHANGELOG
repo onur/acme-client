@@ -1,0 +1,85 @@
+acme-client (0.5.1) UNRELEASED
+
+  [LIB]
+  * No changes.
+
+  [CLI]
+  * Add ability to get domain names from CSR when user provides a CSR with
+    --domain-csr or -C command line options. --domain command line option
+    will be ignored when a CSR provided. (Closes: #20)
+
+ -- Onur Aslan <onur@onur.im>  Tue, 27 Feb 2018 12:13:50 +0300
+
+acme-client (0.5.0)
+
+  [LIB]
+  * `cli` feature has been added. This feature is enabled by default and it
+    will build few additional dependencies used in CLI. Disable
+    default features if you are using acme-client as a library.
+
+  [CLI]
+  * letsencrypt-rs is deprecated and merged with acme-client crate in order
+    to avoid ISRG trademark violation. (Closes: #25)
+  * Remove workspace and move everything to src directory.
+
+ -- Onur Aslan <onur@onur.im>  Tue Feb 13 01:20:45 2018 +0300
+
+acme-client (0.4.5)
+
+  [LIB]
+  * Update LETSENCRYPT_AGREEMENT_URL.
+
+ -- Onur Aslan <onur@onur.im>  Sun Nov 19 15:55:23 2017 +0300
+
+acme-client (0.4.4)
+
+  [LIB]
+  * Drop rustc-serialize in favor of serde and base64.
+  * Use latest version of error-chain.
+
+ -- Onur Aslan <onur@onur.im>  Sat Oct 14 20:54:06 2017 +0300
+
+acme-client (0.4.3)
+
+  [LIB]
+  * Use reqwest-0.6.
+  * Fix typo in documentation.
+
+  [CLI]
+  * Do not return error code if there is no subcommand provided.
+  * Write long description if any error occurs.
+
+ -- Onur Aslan <onur@onur.im>  Wed May 31 19:35:39 2017 +0300
+
+acme-client (0.4.2)
+
+  [LIB]
+  * Remove unwraps from examples.
+  * Replace openssl's deprecated hash method for hash2.
+
+  [MISC]
+  * Add TOC to documentation.
+
+ -- Onur Aslan <onur@onur.im>  Sat May 6 12:40:06 2017 +0300
+
+acme-client (0.4.1)
+
+  [LIB]
+  * Add links to types in documentation.
+  * Implement token and key_authorization methods for Challenge.
+  * Implement get_tls_sni_challenge for Authorization.
+
+ -- Onur Aslan <onur@onur.im>  Sat Apr 15 13:10:42 2017 +0300
+
+acme-client (0.4.0)
+
+  [LIB]
+  * Implement entirely new interface to use library.
+
+  [CLI]
+  * Move letsencrypt-rs to it's own directory and use workspace.
+  * letsencrypt-rs can work with multiple --domain command line arguments now.
+
+ -- Onur Aslan <onur@onur.im>  Fri Apr 7 13:12:16 2017 +0300
+
+# vim: filetype=debchangelog
