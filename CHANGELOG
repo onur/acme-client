@@ -6,16 +6,16 @@ acme-client (0.5.1) UNRELEASED
 
   [CLI]
   * Add ability to get domain names from CSR when user provides a CSR with
-    --domain-csr or -C command line options. --domain command line option
+    `--domain-csr` or `-C` command line options. `--domain` command line option
     will be ignored when a CSR provided. (Closes: #20)
   * Add option to save intermediate certificate and make `-c` to save
     signed certificate chain. `-o` option only saves signed certificate now
     and `-c` will save signed certificate chain. (Closes: #19)
   * Add --directory option to sign and revoke subcommands.
   * Improve help messages for sign subcommand.
-  * Rename --domain-csr option to --csr.
-  * Rename -S short option to -r for SAVE_DOMAIN_CSR.
-  * Add genkey and gencsr subcommands.
+  * Rename `--domain-csr` option to `--csr`.
+  * Rename `-S` short option to `-r` for `SAVE_DOMAIN_CSR`.
+  * Add `genkey` and `gencsr` subcommands.
 
  -- Onur Aslan <onur@onur.im>  Tue, 27 Feb 2018 12:13:50 +0300
 
