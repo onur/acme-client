@@ -174,7 +174,8 @@ OPTIONS:
     -K, --user-key <USER_KEY>        User or domain private key path.
 ```
 
-You can use multiple `-v` flags for verbose output.
+There is also `genkey` and `gencsr` subcommands to generate RSA private key
+and CSR. You can use multiple `-v` flags for verbose output.
 
 
 # Library

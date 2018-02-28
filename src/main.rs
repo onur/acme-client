@@ -7,7 +7,7 @@ extern crate env_logger;
 extern crate openssl_sys;
 
 
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::collections::HashSet;
 use acme_client::Directory;
@@ -129,6 +129,22 @@ fn main() {
                 .short("C")
                 .required(true)
                 .takes_value(true)))
+        .subcommand(SubCommand::with_name("genkey")
+            .about("Generates a 2048 bit RSA private key"))
+        .subcommand(SubCommand::with_name("gencsr")
+            .arg(Arg::with_name("DOMAIN_KEY")
+                .help("Domain private key path.")
+                .long("key")
+                .short("K")
+                .required(true)
+                .takes_value(true))
+            .arg(Arg::with_name("DOMAIN")
+                .help("Domain name. You can specify more than one domain name.")
+                .last(true)
+                .required(true)
+                .multiple(true)
+                .takes_value(true))
+            .about("Generates a certificate signing request from domain names"))
         .arg(Arg::with_name("verbose")
              .help("Show verbose output")
              .short("v")
@@ -141,6 +157,10 @@ fn main() {
         sign_certificate(matches)
     } else if let Some(matches) = matches.subcommand_matches("revoke") {
         revoke_certificate(matches)
+    } else if let Some(_) = matches.subcommand_matches("genkey") {
+        gen_key()
+    } else if let Some(matches) = matches.subcommand_matches("gencsr") {
+        gen_csr(matches)
     } else {
         println!("{}", matches.usage());
         Ok(())
@@ -359,6 +379,26 @@ fn parse_asn1_octet_str(s: &[u8]) -> Vec<String> {
         }
     }
     names
+}
+
+
+fn gen_key() -> Result<()> {
+    let key = acme_client::helper::gen_key()?;
+    io::stdout().write(&key.private_key_to_pem()?)?;
+    Ok(())
+}
+
+
+fn gen_csr(matches: &ArgMatches) -> Result<()> {
+    let pkey = acme_client::helper::read_pkey(matches.value_of("DOMAIN_KEY")
+                                              .ok_or("You need to provide private domain key \
+                                                     with --key option")?)?;
+    let names: Vec<&str> = matches.values_of("DOMAIN")
+        .ok_or("You need to provide at least one domain name")?
+        .map(|s| s).collect();
+    let csr = acme_client::helper::gen_csr(&pkey, &names)?;
+    io::stdout().write(&csr.to_pem()?)?;
+    Ok(())
 }
 
 #[test]
