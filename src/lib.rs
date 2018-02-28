@@ -361,11 +361,11 @@ pub struct SignedCertificate {
 }
 
 
-/// Identifier authorization object
+/// Identifier authorization object.
 pub struct Authorization<'a>(Vec<Challenge<'a>>);
 
 
-/// A verification challenge
+/// A verification challenge.
 pub struct Challenge<'a> {
     account: &'a Account,
     /// Type of verification challenge. Usually `http-01`, `dns-01` for letsencrypt.
@@ -1111,7 +1111,7 @@ pub mod error {
 }
 
 
-/// Various helper functions
+/// Various helper functions.
 pub mod helper {
 
     use std::path::Path;
