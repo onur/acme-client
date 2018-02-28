@@ -1,6 +1,14 @@
 language: rust
-rust:
-  - stable
-  - nightly
+matrix:
+  include:
+    - os: linux
+      rust: nightly
+      dist: trusty
+    - os: linux
+      rust: stable
+      dist: trusty
+    - os: osx
+      rust: nightly
+    - os: osx
+      rust: stable
 cache: cargo
-script: cargo build --verbose --all && cargo test --verbose --all
