@@ -2,14 +2,14 @@
 //! Automatic Certificate Management Environment (ACME) client.
 //!
 //! You can use acme-client library by adding following lines to your `Cargo.toml`:
-//! 
+//!
 //! ```toml
 //! [dependencies]
 //! acme-client = "0.5"
 //! ```
-//! 
+//!
 //! By default `acme-client` will build CLI. You can disable this with:
-//! 
+//!
 //! ```toml
 //! [dependencies.acme-client]
 //! version = "0.5"

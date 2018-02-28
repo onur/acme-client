@@ -111,7 +111,7 @@ and `acme-client revoke --help`:
 
 ```
 $ acme-client sign --help
-acme-client-sign 
+acme-client-sign
 Signs a certificate
 
 USAGE:
