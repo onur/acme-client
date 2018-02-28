@@ -2,6 +2,7 @@ acme-client (0.5.1) UNRELEASED
 
   [LIB]
   * Implement save_intermediate_certificate for SignedCertificate.
+  * Add helper module and make helpers public.
 
   [CLI]
   * Add ability to get domain names from CSR when user provides a CSR with
@@ -14,6 +15,7 @@ acme-client (0.5.1) UNRELEASED
   * Improve help messages for sign subcommand.
   * Rename --domain-csr option to --csr.
   * Rename -S short option to -r for SAVE_DOMAIN_CSR.
+  * Add genkey and gencsr subcommands.
 
  -- Onur Aslan <onur@onur.im>  Tue, 27 Feb 2018 12:13:50 +0300
 
