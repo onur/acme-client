@@ -218,15 +218,21 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     }
 
     let certificate = certificate_signer.sign_certificate()?;
+    let mut certificate_written = false;
 
     if let Some(path) = matches.value_of("SAVE_SIGNED_CERTIFICATE") {
         certificate.save_signed_certificate(path)?;
+        certificate_written = true;
     }
     if let Some(path) = matches.value_of("SAVE_INTERMEDIATE_CERTIFICATE") {
         certificate.save_intermediate_certificate(None, path)?;
     }
     if let Some(path) = matches.value_of("SAVE_CHAINED_CERTIFICATE") {
         certificate.save_signed_certificate_and_chain(None, path)?;
+        certificate_written = true;
+    }
+    if !certificate_written {
+        certificate.write_signed_certificate(&mut io::stdout())?;
     }
     if let Some(path) = matches.value_of("SAVE_DOMAIN_KEY") {
         certificate.save_private_key(path)?;
