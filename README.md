@@ -33,7 +33,9 @@ revoke TLS certificates.
 ## Installation
 
 By default acme-client crate comes with a handy CLI.
-You can install acme-client with: `cargo install acme-client`
+You can install acme-client with: `cargo install acme-client` or you can
+download pre-built acme-client binary for Linux in the
+[releases](https://github.com/onur/acme-client/releases) page.
 
 
 ## Usage
