@@ -2,6 +2,7 @@ acme-client (0.5.1) UNRELEASED
 
   [LIB]
   * Implement save_intermediate_certificate for SignedCertificate.
+  * Add helper module and make helpers public.
 
   [CLI]
   * Add ability to get domain names from CSR when user provides a CSR with

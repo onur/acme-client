@@ -289,13 +289,11 @@ use std::collections::HashMap;
 use openssl::sign::Signer;
 use openssl::hash::{hash2, MessageDigest};
 use openssl::pkey::PKey;
-use openssl::rsa::Rsa;
-use openssl::x509::{X509, X509Req, X509Name};
-use openssl::x509::extension::SubjectAlternativeName;
-use openssl::stack::Stack;
+use openssl::x509::{X509, X509Req};
 
 use reqwest::{Client, StatusCode};
 
+use helper::{gen_key, b64, read_pkey, gen_csr};
 use error::{Result, ErrorKind};
 
 use serde_json::{Value, from_str, to_string, to_value};
@@ -1113,69 +1111,84 @@ pub mod error {
 }
 
 
+/// Various helper functions
+pub mod helper {
 
-/// Generates a new PKey
-fn gen_key() -> Result<PKey> {
-    let rsa = Rsa::generate(BIT_LENGTH)?;
-    let key = PKey::from_rsa(rsa)?;
-    Ok(key)
-}
-
-
-/// Base 64 Encoding with URL and Filename Safe Alphabet
-fn b64(data: &[u8]) -> String {
-    base64::encode_config(data, base64::URL_SAFE_NO_PAD)
-}
-
-
-/// An helper to read PKey from Path
-fn read_pkey<P: AsRef<Path>>(path: P) -> Result<PKey> {
-    let mut file = File::open(path)?;
-    let mut content = Vec::new();
-    file.read_to_end(&mut content)?;
-    let key = PKey::private_key_from_pem(&content)?;
-    Ok(key)
-}
+    use std::path::Path;
+    use std::fs::File;
+    use std::io::Read;
+    use openssl::pkey::PKey;
+    use openssl::rsa::Rsa;
+    use openssl::x509::{X509Req, X509Name};
+    use openssl::x509::extension::SubjectAlternativeName;
+    use openssl::stack::Stack;
+    use openssl::hash::MessageDigest;
+    use error::Result;
 
 
-
-/// An helper to generate X509Req (CSR) from domain names
-///
-/// This function will generate a PKey and sign CSR with it.
-///
-/// Returns X509Req and PKey used to sign X509Req.
-fn gen_csr(pkey: &PKey, domains: &[&str]) -> Result<X509Req> {
-    if domains.is_empty() {
-        return Err("You need to supply at least one or more domain names".into());
+    /// Generates new PKey.
+    pub fn gen_key() -> Result<PKey> {
+        let rsa = Rsa::generate(super::BIT_LENGTH)?;
+        let key = PKey::from_rsa(rsa)?;
+        Ok(key)
     }
 
-    let mut builder = X509Req::builder()?;
-    let name = {
-        let mut name = X509Name::builder()?;
-        name.append_entry_by_text("CN", domains[0])?;
-        name.build()
-    };
-    builder.set_subject_name(&name)?;
 
-    // if more than one domain name is supplied
-    // add them as SubjectAlternativeName
-    if domains.len() > 1 {
-        let san_extension = {
-            let mut san = SubjectAlternativeName::new();
-            for domain in domains.iter() {
-                san.dns(domain);
-            }
-            san.build(&builder.x509v3_context(None))?
+    /// base64 Encoding with URL and Filename Safe Alphabet.
+    pub fn b64(data: &[u8]) -> String {
+        ::base64::encode_config(data, ::base64::URL_SAFE_NO_PAD)
+    }
+
+
+    /// Reads PKey from Path.
+    pub fn read_pkey<P: AsRef<Path>>(path: P) -> Result<PKey> {
+        let mut file = File::open(path)?;
+        let mut content = Vec::new();
+        file.read_to_end(&mut content)?;
+        let key = PKey::private_key_from_pem(&content)?;
+        Ok(key)
+    }
+
+
+
+    /// Generates X509Req (CSR) from domain names.
+    ///
+    /// This function will generate a CSR and sign it with PKey.
+    ///
+    /// Returns X509Req and PKey used to sign X509Req.
+    pub fn gen_csr(pkey: &PKey, domains: &[&str]) -> Result<X509Req> {
+        if domains.is_empty() {
+            return Err("You need to supply at least one or more domain names".into());
+        }
+
+        let mut builder = X509Req::builder()?;
+        let name = {
+            let mut name = X509Name::builder()?;
+            name.append_entry_by_text("CN", domains[0])?;
+            name.build()
         };
-        let mut stack = Stack::new()?;
-        stack.push(san_extension)?;
-        builder.add_extensions(&stack)?;
+        builder.set_subject_name(&name)?;
+
+        // if more than one domain name is supplied
+        // add them as SubjectAlternativeName
+        if domains.len() > 1 {
+            let san_extension = {
+                let mut san = SubjectAlternativeName::new();
+                for domain in domains.iter() {
+                    san.dns(domain);
+                }
+                san.build(&builder.x509v3_context(None))?
+            };
+            let mut stack = Stack::new()?;
+            stack.push(san_extension)?;
+            builder.add_extensions(&stack)?;
+        }
+
+        builder.set_pubkey(&pkey)?;
+        builder.sign(pkey, MessageDigest::sha256())?;
+
+        Ok(builder.build())
     }
-
-    builder.set_pubkey(&pkey)?;
-    builder.sign(pkey, MessageDigest::sha256())?;
-
-    Ok(builder.build())
 }
 
 
