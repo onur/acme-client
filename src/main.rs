@@ -24,6 +24,11 @@ fn main() {
         .subcommand(SubCommand::with_name("sign")
             .about("Signs a certificate")
             .display_order(1)
+            .arg(Arg::with_name("DIRECTORY")
+                .help("Set ACME directory URL")
+                .long("directory")
+                .default_value(acme_client::LETSENCRYPT_DIRECTORY_URL)
+                .takes_value(true))
             .arg(Arg::with_name("USER_KEY_PATH")
                 .help("User private key path to use it in account registration.")
                 .long("user-key")
@@ -95,6 +100,11 @@ fn main() {
         .subcommand(SubCommand::with_name("revoke")
             .about("Revokes a signed certificate")
             .display_order(2)
+            .arg(Arg::with_name("DIRECTORY")
+                .help("Set a acme-server directory URL")
+                .long("directory")
+                .default_value(acme_client::LETSENCRYPT_DIRECTORY_URL)
+                .takes_value(true))
             .arg(Arg::with_name("USER_KEY")
                 .help("User or domain private key path.")
                 .long("user-key")
@@ -148,7 +158,8 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
                    or from --csr".into());
     }
 
-    let directory = Directory::lets_encrypt()?;
+    let directory = Directory::from_url(matches.value_of("DIRECTORY")
+                                        .ok_or("Directory URL not found")?)?;
 
     let mut account_registration = directory.account_registration();
 
@@ -220,7 +231,8 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
 
 
 fn revoke_certificate(matches: &ArgMatches) -> Result<()> {
-    let directory = Directory::lets_encrypt()?;
+    let directory = Directory::from_url(matches.value_of("DIRECTORY")
+                                        .ok_or("Directory URL not found")?)?;
     let account = directory.account_registration()
         .pkey_from_file(matches.value_of("USER_KEY")
                             .ok_or("You need to provide user \
