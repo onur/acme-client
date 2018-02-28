@@ -32,7 +32,7 @@ fn main() {
                 .takes_value(true)
                 .display_order(1))
             .arg(Arg::with_name("USER_KEY_PATH")
-                .help("Path to load user private key to use it in account registration.\
+                .help("Path to load user private key to use it in account registration. \
                       This is optional and acme-client will generate one if it's not supplied.")
                 .long("user-key")
                 .short("U")
