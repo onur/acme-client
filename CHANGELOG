@@ -11,6 +11,9 @@ acme-client (0.5.1) UNRELEASED
     signed certificate chain. `-o` option only saves signed certificate now
     and `-c` will save signed certificate chain. (Closes: #19)
   * Add --directory option to sign and revoke subcommands.
+  * Improve help messages for sign subcommand.
+  * Rename --domain-csr option to --csr.
+  * Rename -S short option to -r for SAVE_DOMAIN_CSR.
 
  -- Onur Aslan <onur@onur.im>  Tue, 27 Feb 2018 12:13:50 +0300
 
