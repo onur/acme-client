@@ -1,4 +1,4 @@
-acme-client (0.5.1) UNRELEASED
+acme-client (0.5.1)
 
   [LIB]
   * Implement save_intermediate_certificate for SignedCertificate.
@@ -17,7 +17,7 @@ acme-client (0.5.1) UNRELEASED
   * Rename `-S` short option to `-r` for `SAVE_DOMAIN_CSR`.
   * Add `genkey` and `gencsr` subcommands.
 
- -- Onur Aslan <onur@onur.im>  Tue, 27 Feb 2018 12:13:50 +0300
+ -- Onur Aslan <onur@onur.im>  Wed, 28 Feb 2018 19:23:47 +0300
 
 acme-client (0.5.0)
 
