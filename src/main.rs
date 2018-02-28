@@ -356,9 +356,9 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
                 let extension_data = X509_EXTENSION_get_data(san_extension.as_ptr());
                 let slc = slice::from_raw_parts((*extension_data).data,
                                                 (*extension_data).length as usize);
-                parse_asn1_octet_str(slc).iter().for_each(|n| {
-                    names.insert(n.to_string());
-                });
+                for name in parse_asn1_octet_str(slc) {
+                    names.insert(name.to_string());
+				}
             }
         }
     }
