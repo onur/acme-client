@@ -358,7 +358,7 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
                                                 (*extension_data).length as usize);
                 for name in parse_asn1_octet_str(slc) {
                     names.insert(name.to_string());
-				}
+                }
             }
         }
     }
