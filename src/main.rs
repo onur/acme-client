@@ -4,6 +4,7 @@ extern crate acme_client;
 extern crate openssl;
 extern crate clap;
 extern crate env_logger;
+extern crate foreign_types;
 extern crate openssl_sys;
 
 
@@ -301,12 +302,11 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
     use std::fs::File;
     use std::io::Read;
     use std::slice;
+    use foreign_types::{ForeignType, ForeignTypeRef};
     use openssl::x509::{X509Req, X509Extension};
     use openssl::nid;
     use openssl::stack::Stack;
-    use openssl::types::OpenSslTypeRef;
     use std::os::raw::{c_int, c_long, c_uchar};
-    use openssl::types::OpenSslType;
 
     fn read_file<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
         let mut file = File::open(path)?;
@@ -320,7 +320,7 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
     let mut names = HashSet::new();
 
     // add CN to names first
-    if let Some(cn) = csr.subject_name().entries_by_nid(nid::COMMONNAME).nth(0) {
+    if let Some(cn) = csr.subject_name().entries_by_nid(nid::Nid::COMMONNAME).nth(0) {
         names.insert(String::from_utf8_lossy(cn.data().as_slice()).into_owned());
     }
 
@@ -384,7 +384,7 @@ fn parse_asn1_octet_str(s: &[u8]) -> Vec<String> {
 
 fn gen_key() -> Result<()> {
     let key = acme_client::helper::gen_key()?;
-    io::stdout().write(&key.private_key_to_pem()?)?;
+    io::stdout().write(&key.private_key_to_pem_pkcs8()?)?;
     Ok(())
 }
 

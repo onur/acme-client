@@ -287,7 +287,7 @@ use std::io::{Read, Write};
 use std::collections::HashMap;
 
 use openssl::sign::Signer;
-use openssl::hash::{hash2, MessageDigest};
+use openssl::hash::{hash, MessageDigest};
 use openssl::pkey::PKey;
 use openssl::x509::{X509, X509Req};
 
@@ -330,14 +330,14 @@ pub struct Directory {
 /// See [AccountRegistration](struct.AccountRegistration.html) helper for more details.
 pub struct Account {
     directory: Directory,
-    pkey: PKey,
+    pkey: PKey<openssl::pkey::Private>,
 }
 
 
 /// Helper to register an account.
 pub struct AccountRegistration {
     directory: Directory,
-    pkey: Option<PKey>,
+    pkey: Option<PKey<openssl::pkey::Private>>,
     email: Option<String>,
     contact: Option<Vec<String>>,
     agreement: Option<String>,
@@ -348,7 +348,7 @@ pub struct AccountRegistration {
 pub struct CertificateSigner<'a> {
     account: &'a Account,
     domains: &'a [&'a str],
-    pkey: Option<PKey>,
+    pkey: Option<PKey<openssl::pkey::Private>>,
     csr: Option<X509Req>,
 }
 
@@ -357,7 +357,7 @@ pub struct CertificateSigner<'a> {
 pub struct SignedCertificate {
     cert: X509,
     csr: X509Req,
-    pkey: PKey,
+    pkey: PKey<openssl::pkey::Private>,
 }
 
 
@@ -462,7 +462,7 @@ impl Directory {
     ///
     /// Returns status code and Value object from reply.
     fn request<T: Serialize>(&self,
-                             pkey: &PKey,
+                             pkey: &PKey<openssl::pkey::Private>,
                              resource: &str,
                              payload: T)
                              -> Result<(StatusCode, Value)> {
@@ -495,7 +495,7 @@ impl Directory {
     }
 
     /// Makes a Flattened JSON Web Signature from payload
-    fn jws<T: Serialize>(&self, pkey: &PKey, payload: T) -> Result<String> {
+    fn jws<T: Serialize>(&self, pkey: &PKey<openssl::pkey::Private>, payload: T) -> Result<String> {
         let nonce = self.get_nonce()?;
         let mut data: HashMap<String, Value> = HashMap::new();
 
@@ -528,14 +528,14 @@ impl Directory {
     }
 
     /// Returns jwk field of jws header
-    fn jwk(&self, pkey: &PKey) -> Result<Value> {
+    fn jwk(&self, pkey: &PKey<openssl::pkey::Private>) -> Result<Value> {
         let rsa = pkey.rsa()?;
         let mut jwk: HashMap<String, String> = HashMap::new();
         jwk.insert("e".to_owned(),
-                   b64(&rsa.e().ok_or("e not found in RSA key")?.to_vec()));
+                   b64(&rsa.e().to_vec()));
         jwk.insert("kty".to_owned(), "RSA".to_owned());
         jwk.insert("n".to_owned(),
-                   b64(&rsa.n().ok_or("n not found in RSA key")?.to_vec()));
+                   b64(&rsa.n().to_vec()));
         Ok(to_value(jwk)?)
     }
 }
@@ -589,7 +589,7 @@ impl Account {
             // key-authz = token || '.' || base64url(JWK\_Thumbprint(accountKey))
             let key_authorization = format!("{}.{}",
                                             token,
-                                            b64(&hash2(MessageDigest::sha256(),
+                                            b64(&hash(MessageDigest::sha256(),
                                                        &to_string(&self.directory()
                                                                        .jwk(self.pkey())?)?
                                                                 .into_bytes())?));
@@ -656,7 +656,7 @@ impl Account {
 
     /// Writes account private key to a writer
     pub fn write_private_key<W: Write>(&self, writer: &mut W) -> Result<()> {
-        Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
+        Ok(writer.write_all(&self.pkey().private_key_to_pem_pkcs8()?)?)
     }
 
     /// Saves account private key to a file
@@ -666,7 +666,7 @@ impl Account {
     }
 
     /// Returns a reference to account private key
-    pub fn pkey(&self) -> &PKey {
+    pub fn pkey(&self) -> &PKey<openssl::pkey::Private> {
         &self.pkey
     }
 
@@ -699,7 +699,7 @@ impl AccountRegistration {
     }
 
     /// Sets account private key. A new key will be generated if it's not set.
-    pub fn pkey(mut self, pkey: PKey) -> AccountRegistration {
+    pub fn pkey(mut self, pkey: PKey<openssl::pkey::Private>) -> AccountRegistration {
         self.pkey = Some(pkey);
         self
     }
@@ -748,7 +748,7 @@ impl AccountRegistration {
 
 impl<'a> CertificateSigner<'a> {
     /// Set PKey of CSR
-    pub fn pkey(mut self, pkey: PKey) -> CertificateSigner<'a> {
+    pub fn pkey(mut self, pkey: PKey<openssl::pkey::Private>) -> CertificateSigner<'a> {
         self.pkey = Some(pkey);
         self
     }
@@ -906,7 +906,7 @@ impl SignedCertificate {
 
     /// Writes private key used to sign certificate to a writer
     pub fn write_private_key<W: Write>(&self, writer: &mut W) -> Result<()> {
-        Ok(writer.write_all(&self.pkey().private_key_to_pem()?)?)
+        Ok(writer.write_all(&self.pkey().private_key_to_pem_pkcs8()?)?)
     }
 
     /// Writes CSR used to sign certificateto a writer
@@ -925,7 +925,7 @@ impl SignedCertificate {
     }
 
     /// Returns reference to pkey used to sign certificate
-    pub fn pkey(&self) -> &PKey {
+    pub fn pkey(&self) -> &PKey<openssl::pkey::Private> {
         &self.pkey
     }
 }
@@ -980,8 +980,8 @@ impl<'a> Challenge<'a> {
     /// This value is used for verification of domain over DNS. Signature must be saved
     /// as a TXT record for `_acme_challenge.example.com`.
     pub fn signature(&self) -> Result<String> {
-        Ok(b64(&hash2(MessageDigest::sha256(),
-                      &self.key_authorization.clone().into_bytes())?))
+        Ok(b64(&hash(MessageDigest::sha256(),
+                     &self.key_authorization.clone().into_bytes())?))
     }
 
     /// Returns challenge type, usually `http-01` or `dns-01` for Let's Encrypt.
@@ -1117,6 +1117,7 @@ pub mod helper {
     use std::path::Path;
     use std::fs::File;
     use std::io::Read;
+    use openssl;
     use openssl::pkey::PKey;
     use openssl::rsa::Rsa;
     use openssl::x509::{X509Req, X509Name};
@@ -1127,7 +1128,7 @@ pub mod helper {
 
 
     /// Generates new PKey.
-    pub fn gen_key() -> Result<PKey> {
+    pub fn gen_key() -> Result<PKey<openssl::pkey::Private>> {
         let rsa = Rsa::generate(super::BIT_LENGTH)?;
         let key = PKey::from_rsa(rsa)?;
         Ok(key)
@@ -1141,7 +1142,7 @@ pub mod helper {
 
 
     /// Reads PKey from Path.
-    pub fn read_pkey<P: AsRef<Path>>(path: P) -> Result<PKey> {
+    pub fn read_pkey<P: AsRef<Path>>(path: P) -> Result<PKey<openssl::pkey::Private>> {
         let mut file = File::open(path)?;
         let mut content = Vec::new();
         file.read_to_end(&mut content)?;
@@ -1156,7 +1157,7 @@ pub mod helper {
     /// This function will generate a CSR and sign it with PKey.
     ///
     /// Returns X509Req and PKey used to sign X509Req.
-    pub fn gen_csr(pkey: &PKey, domains: &[&str]) -> Result<X509Req> {
+    pub fn gen_csr(pkey: &PKey<openssl::pkey::Private>, domains: &[&str]) -> Result<X509Req> {
         if domains.is_empty() {
             return Err("You need to supply at least one or more domain names".into());
         }
