@@ -1,3 +1,10 @@
+acme-client (0.5.2)
+
+  [LIB]
+  * Use latest version of openssl crate (0.10).
+
+ -- Onur Aslan <onur@onur.im>  Sun, 04 Mar 2018 22:43:43 +0300
+
 acme-client (0.5.1)
 
   [LIB]
