@@ -158,7 +158,7 @@ fn main() {
         sign_certificate(matches)
     } else if let Some(matches) = matches.subcommand_matches("revoke") {
         revoke_certificate(matches)
-    } else if let Some(_) = matches.subcommand_matches("genkey") {
+    } else if matches.subcommand_matches("genkey").is_some() {
         gen_key()
     } else if let Some(matches) = matches.subcommand_matches("gencsr") {
         gen_csr(matches)
@@ -293,7 +293,7 @@ fn init_logger(level: u64) {
         _ => "acme_client=debug",
     };
     let mut builder = env_logger::LogBuilder::new();
-    builder.parse(&::std::env::var("RUST_LOG").unwrap_or(level.to_owned()));
+    builder.parse(&::std::env::var("RUST_LOG").unwrap_or_else(|_| level.to_owned()));
     let _ = builder.init();
 }
 
@@ -384,7 +384,7 @@ fn parse_asn1_octet_str(s: &[u8]) -> Vec<String> {
 
 fn gen_key() -> Result<()> {
     let key = acme_client::helper::gen_key()?;
-    io::stdout().write(&key.private_key_to_pem_pkcs8()?)?;
+    io::stdout().write_all(&key.private_key_to_pem_pkcs8()?)?;
     Ok(())
 }
 
@@ -395,9 +395,9 @@ fn gen_csr(matches: &ArgMatches) -> Result<()> {
                                                      with --key option")?)?;
     let names: Vec<&str> = matches.values_of("DOMAIN")
         .ok_or("You need to provide at least one domain name")?
-        .map(|s| s).collect();
+        .collect();
     let csr = acme_client::helper::gen_csr(&pkey, &names)?;
-    io::stdout().write(&csr.to_pem()?)?;
+    io::stdout().write_all(&csr.to_pem()?)?;
     Ok(())
 }
 
