@@ -7,6 +7,9 @@ extern crate env_logger;
 extern crate foreign_types;
 extern crate openssl_sys;
 
+#[cfg(feature = "vendored-openssl")]
+extern crate openssl_probe;
+
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -17,6 +20,9 @@ use clap::{Arg, App, SubCommand, ArgMatches};
 
 
 fn main() {
+    #[cfg(feature = "vendored-openssl")]
+    openssl_probe::init_ssl_cert_env_vars();
+
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
