@@ -1,20 +1,17 @@
 /// Easy to use Let's Encrypt client to issue and renew TLS certs
-
 extern crate acme_client;
-extern crate openssl;
 extern crate clap;
 extern crate env_logger;
 extern crate foreign_types;
+extern crate openssl;
 extern crate openssl_sys;
 
-
+use acme_client::error::Result;
+use acme_client::Directory;
+use clap::{App, Arg, ArgMatches, SubCommand};
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::path::Path;
-use std::collections::HashSet;
-use acme_client::Directory;
-use acme_client::error::Result;
-use clap::{Arg, App, SubCommand, ArgMatches};
-
 
 fn main() {
     let matches = App::new(env!("CARGO_PKG_NAME"))
@@ -173,26 +170,33 @@ fn main() {
     }
 }
 
-
-
 fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     // get domain names from --domain-csr or --domain arguments
     // FIXME: there is so many unncessary string conversations in the following code
     let domains: Vec<String> = if let Some(csr_path) = matches.value_of("DOMAIN_CSR") {
         names_from_csr(csr_path)?.into_iter().collect()
     } else {
-        matches.values_of("DOMAIN")
-            .ok_or("You need to provide at least one domain name")?.map(|s| s.to_owned()).collect()
+        matches
+            .values_of("DOMAIN")
+            .ok_or("You need to provide at least one domain name")?
+            .map(|s| s.to_owned())
+            .collect()
     };
 
     // domains could be empty if provided --csr doesn't contain any
     if domains.is_empty() {
-        return Err("You need to provide at least one domain name with --domain argument \
-                   or from --csr".into());
+        return Err(
+            "You need to provide at least one domain name with --domain argument \
+             or from --csr"
+                .into(),
+        );
     }
 
-    let directory = Directory::from_url(matches.value_of("DIRECTORY")
-                                        .ok_or("Directory URL not found")?)?;
+    let directory = Directory::from_url(
+        matches
+            .value_of("DIRECTORY")
+            .ok_or("Directory URL not found")?,
+    )?;
 
     let mut account_registration = directory.account_registration();
 
@@ -209,19 +213,26 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     for domain in &domains {
         let authorization = account.authorization(domain)?;
         if !matches.is_present("DNS_CHALLENGE") {
-            let challenge = authorization.get_http_challenge().ok_or("HTTP challenge not found")?;
-            challenge.save_key_authorization(matches.value_of("PUBLIC_DIR")
-                                                 .ok_or("--public-dir not defined. \
-                                                            You need to define a public \
-                                                            directory to use http challenge \
-                                                            verification")?)?;
+            let challenge = authorization
+                .get_http_challenge()
+                .ok_or("HTTP challenge not found")?;
+            challenge.save_key_authorization(matches.value_of("PUBLIC_DIR").ok_or(
+                "--public-dir not defined. \
+                 You need to define a public \
+                 directory to use http challenge \
+                 verification",
+            )?)?;
             challenge.validate()?;
         } else {
-            let challenge = authorization.get_dns_challenge().ok_or("DNS challenge not found")?;
-            println!("Please create a TXT record for _acme-challenge.{}: {}\n\
-                      Press enter to continue",
-                     domain,
-                     challenge.signature()?);
+            let challenge = authorization
+                .get_dns_challenge()
+                .ok_or("DNS challenge not found")?;
+            println!(
+                "Please create a TXT record for _acme-challenge.{}: {}\n\
+                 Press enter to continue",
+                domain,
+                challenge.signature()?
+            );
             io::stdin().read_line(&mut String::new()).unwrap();
             challenge.validate()?;
         }
@@ -268,23 +279,27 @@ fn sign_certificate(matches: &ArgMatches) -> Result<()> {
     Ok(())
 }
 
-
 fn revoke_certificate(matches: &ArgMatches) -> Result<()> {
-    let directory = Directory::from_url(matches.value_of("DIRECTORY")
-                                        .ok_or("Directory URL not found")?)?;
-    let account = directory.account_registration()
-        .pkey_from_file(matches.value_of("USER_KEY")
-                            .ok_or("You need to provide user \
-                                   or domain private key used \
-                                   to sign certificate.")?)?
+    let directory = Directory::from_url(
+        matches
+            .value_of("DIRECTORY")
+            .ok_or("Directory URL not found")?,
+    )?;
+    let account = directory
+        .account_registration()
+        .pkey_from_file(matches.value_of("USER_KEY").ok_or(
+            "You need to provide user \
+             or domain private key used \
+             to sign certificate.",
+        )?)?
         .register()?;
-    account.revoke_certificate_from_file(matches.value_of("SIGNED_CRT")
-                                             .ok_or("You need to provide \
-                                                    a signed certificate to \
-                                                    revoke.")?)?;
+    account.revoke_certificate_from_file(matches.value_of("SIGNED_CRT").ok_or(
+        "You need to provide \
+         a signed certificate to \
+         revoke.",
+    )?)?;
     Ok(())
 }
-
 
 fn init_logger(level: u64) {
     let level = match level {
@@ -297,16 +312,15 @@ fn init_logger(level: u64) {
     let _ = builder.init();
 }
 
-
 fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
-    use std::fs::File;
-    use std::io::Read;
-    use std::slice;
     use foreign_types::{ForeignType, ForeignTypeRef};
-    use openssl::x509::{X509Req, X509Extension};
     use openssl::nid;
     use openssl::stack::Stack;
+    use openssl::x509::{X509Extension, X509Req};
+    use std::fs::File;
+    use std::io::Read;
     use std::os::raw::{c_int, c_long, c_uchar};
+    use std::slice;
 
     fn read_file<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
         let mut file = File::open(path)?;
@@ -320,7 +334,11 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
     let mut names = HashSet::new();
 
     // add CN to names first
-    if let Some(cn) = csr.subject_name().entries_by_nid(nid::Nid::COMMONNAME).nth(0) {
+    if let Some(cn) = csr
+        .subject_name()
+        .entries_by_nid(nid::Nid::COMMONNAME)
+        .nth(0)
+    {
         names.insert(String::from_utf8_lossy(cn.data().as_slice()).into_owned());
     }
 
@@ -330,32 +348,32 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
             length: c_int,
             type_: c_int,
             data: *mut c_uchar,
-            flags: c_long
+            flags: c_long,
         }
         extern "C" {
             fn X509_REQ_get_extensions(
-                req: *mut openssl_sys::X509_REQ
+                req: *mut openssl_sys::X509_REQ,
             ) -> *mut openssl_sys::stack_st_X509_EXTENSION;
             fn X509v3_get_ext_by_NID(
                 x: *const openssl_sys::stack_st_X509_EXTENSION,
                 nid: c_int,
-                lastpos: c_int
+                lastpos: c_int,
             ) -> c_int;
-            fn X509_EXTENSION_get_data(
-                ne: *mut openssl_sys::X509_EXTENSION,
-            ) -> *mut Asn1StringSt;
+            fn X509_EXTENSION_get_data(ne: *mut openssl_sys::X509_EXTENSION) -> *mut Asn1StringSt;
         }
         let extensions = X509_REQ_get_extensions(csr.as_ptr());
         if !extensions.is_null() {
-            let san_extension_idx = X509v3_get_ext_by_NID(extensions,
-                                                          openssl_sys::NID_subject_alt_name,
-                                                          -1);
+            let san_extension_idx =
+                X509v3_get_ext_by_NID(extensions, openssl_sys::NID_subject_alt_name, -1);
             if let Some(san_extension) = Stack::<X509Extension>::from_ptr(extensions)
-                .iter().nth(san_extension_idx as usize) {
-
+                .iter()
+                .nth(san_extension_idx as usize)
+            {
                 let extension_data = X509_EXTENSION_get_data(san_extension.as_ptr());
-                let slc = slice::from_raw_parts((*extension_data).data,
-                                                (*extension_data).length as usize);
+                let slc = slice::from_raw_parts(
+                    (*extension_data).data,
+                    (*extension_data).length as usize,
+                );
                 for name in parse_asn1_octet_str(slc) {
                     names.insert(name.to_string());
                 }
@@ -365,7 +383,6 @@ fn names_from_csr<P: AsRef<Path>>(csr_path: P) -> Result<HashSet<String>> {
 
     Ok(names)
 }
-
 
 fn parse_asn1_octet_str(s: &[u8]) -> Vec<String> {
     let mut iter = s.split(|n| *n == 130);
@@ -381,19 +398,19 @@ fn parse_asn1_octet_str(s: &[u8]) -> Vec<String> {
     names
 }
 
-
 fn gen_key() -> Result<()> {
     let key = acme_client::helper::gen_key()?;
     io::stdout().write_all(&key.private_key_to_pem_pkcs8()?)?;
     Ok(())
 }
 
-
 fn gen_csr(matches: &ArgMatches) -> Result<()> {
-    let pkey = acme_client::helper::read_pkey(matches.value_of("DOMAIN_KEY")
-                                              .ok_or("You need to provide private domain key \
-                                                     with --key option")?)?;
-    let names: Vec<&str> = matches.values_of("DOMAIN")
+    let pkey = acme_client::helper::read_pkey(matches.value_of("DOMAIN_KEY").ok_or(
+        "You need to provide private domain key \
+         with --key option",
+    )?)?;
+    let names: Vec<&str> = matches
+        .values_of("DOMAIN")
         .ok_or("You need to provide at least one domain name")?
         .collect();
     let csr = acme_client::helper::gen_csr(&pkey, &names)?;
