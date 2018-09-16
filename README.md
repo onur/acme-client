@@ -12,6 +12,7 @@ revoke TLS certificates.
 
    * [CLI](#cli)
       * [Installation](#installation)
+         * [Vendored OpenSSL](#vendored-openssl)
       * [Usage](#usage)
          * [Sign a certificate](#sign-a-certificate)
          * [Using your own keys and CSR](#using-your-own-keys-and-csr)
@@ -36,6 +37,12 @@ By default acme-client crate comes with a handy CLI.
 You can install acme-client with: `cargo install acme-client` or you can
 download pre-built acme-client binary for Linux in the
 [releases](https://github.com/onur/acme-client/releases) page.
+
+
+### Vendored OpenSSL
+
+acme-client has a feature to build and link OpenSSL statically.
+To activate, run cargo with this param: `--features "vendored-openssl"`
 
 
 ## Usage
