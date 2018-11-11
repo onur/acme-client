@@ -399,8 +399,8 @@ impl Directory {
     /// # fn main () { try_main().unwrap(); }
     /// ```
     pub fn from_url(url: &str) -> Result<Directory> {
-        let client = Client::new()?;
-        let mut res = client.get(url)?.send()?;
+        let client = Client::new();
+        let mut res = client.get(url).send()?;
         let mut content = String::new();
         res.read_to_string(&mut content)?;
         Ok(Directory {
@@ -450,8 +450,8 @@ impl Directory {
     /// it will try to get nonce header from directory url.
     fn get_nonce(&self) -> Result<String> {
         let url = self.url_for("new-nonce").unwrap_or(&self.url);
-        let client = Client::new()?;
-        let res = client.get(url)?.send()?;
+        let client = Client::new();
+        let res = client.get(url).send()?;
         res.headers()
             .get::<hyperx::ReplayNonce>()
             .ok_or("Replay-Nonce header not found".into())
@@ -474,10 +474,10 @@ impl Directory {
             .and_then(|obj| obj.insert("resource".to_owned(), resource_json));
 
         let jws = self.jws(pkey, json)?;
-        let client = Client::new()?;
+        let client = Client::new();
         let mut res = client
             .post(self.url_for(resource)
-                      .ok_or(format!("URL for resource: {} not found", resource))?)?
+                      .ok_or(format!("URL for resource: {} not found", resource))?)
             .body(jws)
             .send()?;
 
@@ -793,13 +793,13 @@ impl<'a> CertificateSigner<'a> {
         map.insert("resource".to_owned(), "new-cert".to_owned());
         map.insert("csr".to_owned(), b64(&csr.to_der()?));
 
-        let client = Client::new()?;
+        let client = Client::new();
         let jws = self.account.directory().jws(self.account.pkey(), map)?;
         let mut res = client
             .post(self.account
                       .directory()
                       .url_for("new-cert")
-                      .ok_or("new-cert url not found")?)?
+                      .ok_or("new-cert url not found")?)
             .body(jws)
             .send()?;
 
@@ -895,9 +895,9 @@ impl SignedCertificate {
     /// [`LETSENCRYPT_INTERMEDIATE_CERT_URL`](constant.LETSENCRYPT_INTERMEDIATE_CERT_URL.html).
     /// will be used if url is None.
     fn get_intermediate_certificate(&self, url: Option<&str>) -> Result<X509> {
-        let client = Client::new()?;
+        let client = Client::new();
         let mut res = client
-            .get(url.unwrap_or(LETSENCRYPT_INTERMEDIATE_CERT_URL))?
+            .get(url.unwrap_or(LETSENCRYPT_INTERMEDIATE_CERT_URL))
             .send()?;
         let mut content = Vec::new();
         res.read_to_end(&mut content)?;
@@ -1015,8 +1015,8 @@ impl<'a> Challenge<'a> {
             self.account.directory().jws(self.account.pkey(), map)?
         };
 
-        let client = Client::new()?;
-        let mut resp = client.post(&self.url)?.body(payload).send()?;
+        let client = Client::new();
+        let mut resp = client.post(&self.url).body(payload).send()?;
 
         let mut res_json: Value = {
             let mut res_content = String::new();
@@ -1038,7 +1038,7 @@ impl<'a> Challenge<'a> {
 
             if status == "pending" {
                 debug!("Status is pending, trying again...");
-                let mut resp = client.get(&self.url)?.send()?;
+                let mut resp = client.get(&self.url).send()?;
                 res_json = {
                     let mut res_content = String::new();
                     resp.read_to_string(&mut res_content)?;
