@@ -274,7 +274,6 @@ pub extern crate openssl;
 extern crate log;
 #[macro_use]
 extern crate error_chain;
-#[macro_use]
 extern crate hyper;
 extern crate reqwest;
 extern crate serde;
@@ -453,9 +452,9 @@ impl Directory {
         let client = Client::new();
         let res = client.get(url).send()?;
         res.headers()
-            .get::<hyperx::ReplayNonce>()
+            .get("Replay-Nonce")
             .ok_or("Replay-Nonce header not found".into())
-            .and_then(|nonce| Ok(nonce.as_str().to_string()))
+            .and_then(|nonce| nonce.to_str().map(|s| s.to_string()).map_err(|e| e.into()))
     }
 
     /// Makes a new post request to directory, signs payload with pkey.
@@ -557,7 +556,7 @@ impl Account {
         });
         let (status, resp) = self.directory().request(self.pkey(), "new-authz", map)?;
 
-        if status != StatusCode::Created {
+        if status != StatusCode::CREATED {
             return Err(ErrorKind::AcmeServerError(resp).into());
         }
 
@@ -646,8 +645,8 @@ impl Account {
         };
 
         match status {
-            StatusCode::Ok => info!("Certificate successfully revoked"),
-            StatusCode::Conflict => warn!("Certificate already revoked"),
+            StatusCode::OK => info!("Certificate successfully revoked"),
+            StatusCode::CONFLICT => warn!("Certificate already revoked"),
             _ => return Err(ErrorKind::AcmeServerError(resp).into()),
         }
 
@@ -733,8 +732,8 @@ impl AccountRegistration {
         let (status, resp) = self.directory.request(&pkey, "new-reg", map)?;
 
         match status {
-            StatusCode::Created => debug!("User successfully registered"),
-            StatusCode::Conflict => debug!("User already registered"),
+            StatusCode::CREATED => debug!("User successfully registered"),
+            StatusCode::CONFLICT => debug!("User already registered"),
             _ => return Err(ErrorKind::AcmeServerError(resp).into()),
         };
 
@@ -803,7 +802,7 @@ impl<'a> CertificateSigner<'a> {
             .body(jws)
             .send()?;
 
-        if res.status() != StatusCode::Created {
+        if res.status() != StatusCode::CREATED {
             let res_json = {
                 let mut res_content = String::new();
                 res.read_to_string(&mut res_content)?;
@@ -1024,7 +1023,7 @@ impl<'a> Challenge<'a> {
             from_str(&res_content)?
         };
 
-        if resp.status() != StatusCode::Accepted {
+        if resp.status() != StatusCode::ACCEPTED {
             return Err(ErrorKind::AcmeServerError(res_json).into());
         }
 
@@ -1058,14 +1057,6 @@ impl<'a> Challenge<'a> {
 }
 
 
-// header! is making a public struct,
-// our custom header is private and only used privately in this module
-mod hyperx {
-    // ReplayNonce header for hyper
-    header! { (ReplayNonce, "Replay-Nonce") => [String] }
-}
-
-
 /// Error and result types.
 pub mod error {
     use std::io;
@@ -1086,6 +1077,7 @@ pub mod error {
             OpenSslErrorStack(openssl::error::ErrorStack);
             IoError(io::Error);
             HyperError(hyper::Error);
+            HyperToStrError(hyper::header::ToStrError);
             ReqwestError(reqwest::Error);
             ValueParserError(serde_json::Error);
         }
