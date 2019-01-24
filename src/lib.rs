@@ -284,7 +284,7 @@ extern crate base64;
 use std::path::Path;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 
 use openssl::sign::Signer;
 use openssl::hash::{hash, MessageDigest};
@@ -527,21 +527,19 @@ impl Directory {
         Ok(json_str)
     }
 
-    /// Returns jwk field of jws header
+    /// Returns jwk field of jws header.
+    ///
+    /// NB: we are using a BTreeMap here to ensure the serialization order of the keys. If keys
+    /// are out of order, signature validation will fail.
     fn jwk(&self, pkey: &PKey<openssl::pkey::Private>) -> Result<Value> {
         let rsa = pkey.rsa()?;
-        let mut jwk: HashMap<String, String> = HashMap::new();
-        jwk.insert("e".to_owned(),
-                   b64(&rsa.e().to_vec()));
+        let mut jwk: BTreeMap<String, String> = BTreeMap::new();
+        jwk.insert("e".to_owned(), b64(&rsa.e().to_vec()));
         jwk.insert("kty".to_owned(), "RSA".to_owned());
-        jwk.insert("n".to_owned(),
-                   b64(&rsa.n().to_vec()));
+        jwk.insert("n".to_owned(), b64(&rsa.n().to_vec()));
         Ok(to_value(jwk)?)
     }
 }
-
-
-
 
 impl Account {
     /// Creates a new identifier authorization object for domain
@@ -570,6 +568,7 @@ impl Account {
             let obj = challenge
                 .as_object()
                 .ok_or("Challenge object not found")?;
+            debug!("Received challenge: {:?}", &obj);
 
             let ctype = obj.get("type")
                 .and_then(|t| t.as_str())
@@ -587,12 +586,10 @@ impl Account {
             // This seems really cryptic but it's not
             // https://tools.ietf.org/html/draft-ietf-acme-acme-05#section-7.1
             // key-authz = token || '.' || base64url(JWK\_Thumbprint(accountKey))
-            let key_authorization = format!("{}.{}",
-                                            token,
-                                            b64(&hash(MessageDigest::sha256(),
-                                                       &to_string(&self.directory()
-                                                                       .jwk(self.pkey())?)?
-                                                                .into_bytes())?));
+            let jwk_json = &self.directory().jwk(self.pkey())?;
+            let jwk_bytes = &to_string(jwk_json)?.into_bytes();
+            let b64_thumb = b64(&hash(MessageDigest::sha256(), jwk_bytes)?);
+            let key_authorization = format!("{}.{}", token, b64_thumb);
 
             let challenge = Challenge {
                 account: self,
@@ -1001,15 +998,14 @@ impl<'a> Challenge<'a> {
 
     /// Triggers validation.
     pub fn validate(&self) -> Result<()> {
-        info!("Triggering {} validation", self.ctype);
+        debug!("Triggering {} validation for token '{}' with key auth '{}'", &self.ctype, &self.token, &self.key_authorization);
         let payload = {
             let map = {
                 let mut map: HashMap<String, Value> = HashMap::new();
                 map.insert("type".to_owned(), to_value(&self.ctype)?);
                 map.insert("token".to_owned(), to_value(&self.token)?);
                 map.insert("resource".to_owned(), to_value("challenge")?);
-                map.insert("keyAuthorization".to_owned(),
-                           to_value(&self.key_authorization)?);
+                map.insert("keyAuthorization".to_owned(), to_value(&self.key_authorization)?);
                 map
             };
             self.account.directory().jws(self.account.pkey(), map)?
