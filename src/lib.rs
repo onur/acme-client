@@ -274,7 +274,6 @@ pub extern crate openssl;
 extern crate log;
 #[macro_use]
 extern crate error_chain;
-extern crate hyper;
 extern crate reqwest;
 extern crate serde;
 extern crate serde_json;
@@ -1061,7 +1060,6 @@ impl<'a> Challenge<'a> {
 pub mod error {
     use std::io;
     use openssl;
-    use hyper;
     use reqwest;
     use serde_json;
 
@@ -1076,9 +1074,8 @@ pub mod error {
         foreign_links {
             OpenSslErrorStack(openssl::error::ErrorStack);
             IoError(io::Error);
-            HyperError(hyper::Error);
-            HyperToStrError(hyper::header::ToStrError);
             ReqwestError(reqwest::Error);
+            ReqwestToStrError(reqwest::header::ToStrError);
             ValueParserError(serde_json::Error);
         }
 
